@@ -4,7 +4,7 @@ import tkinter as tk
 import tkinter.ttk as ttk
 import os, sys, win32api, win32con,re,json,winsound,webbrowser
 from tkinter import filedialog
-VERSION='1.0.0'
+VERSION='1.0.1'
 MITLICENSE="""MIT License
 
 Copyright © 2026-2031 炸图监管者
@@ -122,7 +122,6 @@ class MCLangTools:
         SetDPI()
         self.root = tk.Tk()
         self.update_title()
-        self.update_title()
         width = 1500
         height = 900
         screenwidth = self.root.winfo_screenwidth()
@@ -133,31 +132,33 @@ class MCLangTools:
         self.root.protocol('WM_DELETE_WINDOW', self.close_root)
         self.root.focus()
 
-        tk.Label(self.root, fg=TEXTFG, bg=WINDOWBG, text=f"V{VERSION}", anchor='e').place(x=1280, y=70, width=200, height=30)
+        tk.Label(self.root, fg=TEXTFG, bg=WINDOWBG, text=f"V{VERSION}", anchor='e').place(x=1350, y=20, width=130, height=30)
 
         self.font_icon=tkfont.Font(family='WS_Segoe_MDL2_Assets',size=12)
 
         style_scrollbar = ttk.Style()
         style_scrollbar.configure("TScrollbar", background=WINDOWBG)
 
-        tk.Label(self.root, fg=TEXTFG, bg=WINDOWBG, text='语言文件:', anchor='w').place(x=20, y=20, width=80, height=30)
 
-        self.entry_file = DEntry(self.root,state='readonly')
-        self.entry_file.place(x=100, y=20, width=1380, height=30)
-        
+
 
 
         self.var_entry_path = tk.StringVar()
         self.combobox_path = DCombobutton(self.root,textvariable=self.var_entry_path,state='normal',close_list_command=self.on_path_committed)
-        self.combobox_path.place(x=100, y=70, width=720, height=30)
+        self.combobox_path.place(x=100, y=20, width=740, height=30)
         self.var_entry_path.trace_add("write", lambda *_: self.on_path_text_changed())
         self.combobox_path.Entry.bind('<Return>', self.on_path_return, add='+')
-
         BindTipWindow(self.combobox_path,text='浏览路径(按下回车确定)')
+
+        self.entry_file = DEntry(self.root,state='readonly')
+        self.entry_file.place(x=860, y=20, width=480, height=30)
+        
+
+
 
 
         self.frame_path_operation=tk.Frame(self.root,bg=TEXTBG)
-        self.frame_path_operation.place(x=20,y=70,width=60,height=30)
+        self.frame_path_operation.place(x=20,y=20,width=60,height=30)
 
         self.button_previous_path=DAlphaButton(self.frame_path_operation,text='',bg=WINDOWBG,font=self.font_icon,
                                         command=self.go_previous_path)
@@ -171,7 +172,7 @@ class MCLangTools:
 
 
         self.frame_file=tk.Frame(self.root,bg=TEXTBG)
-        self.frame_file.place(x=20,y=120,width=180,height=30)
+        self.frame_file.place(x=20,y=70,width=180,height=30)
 
         self.button_file = DAlphaButton(self.frame_file,text='\uE8B7', 
                                         command=self.browse_lang_file_dialog,font=self.font_icon,bg=TEXTBG)
@@ -211,7 +212,7 @@ class MCLangTools:
 
 
         self.frame_edit_operation=tk.Frame(self.root,bg=TEXTBG)
-        self.frame_edit_operation.place(x=220,y=120,width=60,height=30)
+        self.frame_edit_operation.place(x=220,y=70,width=60,height=30)
 
         self.button_undo = DAlphaButton(self.frame_edit_operation,text='\uE10E',
                                         command=self.undo,font=self.font_icon,bg=TEXTBG)
@@ -231,7 +232,7 @@ class MCLangTools:
 
 
         self.frame_treeview_operation=tk.Frame(self.root,bg=TEXTBG)
-        self.frame_treeview_operation.place(x=300,y=120,width=160,height=30)
+        self.frame_treeview_operation.place(x=300,y=70,width=160,height=30)
 
         self.button_expand_selected = DAlphaButton(self.frame_treeview_operation,text='\uE972',
                                                    command=self.expand_selected,font=self.font_icon,bg=TEXTBG)
@@ -266,7 +267,7 @@ class MCLangTools:
 
 
         self.frame_view=tk.Frame(self.root,bg=TEXTBG)
-        self.frame_view.place(x=480,y=120,width=60,height=30)
+        self.frame_view.place(x=480,y=70,width=60,height=30)
 
         self.button_search = DAlphaButton(self.frame_view, text='\uE71E', 
                                           command=self.open_search_window,font=self.font_icon,bg=TEXTBG)
@@ -283,7 +284,7 @@ class MCLangTools:
 
 
         self.frame_software=tk.Frame(self.root,bg=TEXTBG)
-        self.frame_software.place(x=560,y=120,width=60,height=30)
+        self.frame_software.place(x=560,y=70,width=60,height=30)
 
         self.button_help= DAlphaButton(self.frame_software, text='\uE9CE', 
                                            command=self.help,font=self.font_icon,bg=TEXTBG)
@@ -296,10 +297,7 @@ class MCLangTools:
         BindTipWindow(self.button_about,text='关于')
 
 
-        self.button_reset_all = DButton(self.root,text='\uE777', command=self.do_reset_all,
-                                             fg=REDTEXTFG,font=self.font_icon,)
-        self.button_reset_all.place(x=1450, y=120, width=30, height=30)
-        BindTipWindow(self.button_reset_all,text='重置',text_color=REDTEXTFG)
+
 
 
         def update_auto_wrap():
@@ -310,9 +308,9 @@ class MCLangTools:
 
         self.var_checkbutton_auto_wrap=tk.BooleanVar()
         self.var_checkbutton_auto_wrap.set(False)
-        self.checkbutton_auto_wrap=tk.Checkbutton(self.search_window,text='自动换行',onvalue=True, offvalue=False, anchor='w',variable=self.var_checkbutton_auto_wrap,
+        self.checkbutton_auto_wrap=DCheckbutton(self.search_window,text='自动换行',onvalue=True, offvalue=False, anchor='w',variable=self.var_checkbutton_auto_wrap,
                                 bg=WINDOWBG,fg=TEXTFG,activebackground=WINDOWBG,activeforeground=TEXTFG,selectcolor=WIDGETBG,)
-        self.checkbutton_auto_wrap.place(x=860,y=120,width=100,height=30)
+        self.checkbutton_auto_wrap.place(x=860,y=70,width=100,height=30)
         #BindTipWindow(self.checkbutton_auto_wrap,text='自动换行')
         #事件绑定在最下面
 
@@ -324,11 +322,19 @@ class MCLangTools:
                 self.text_lang.unbind_all('<Triple-Button-1>',)
 
         self.var_checkbutton_auto_goto=tk.BooleanVar()
-        self.checkbutton_auto_goto=tk.Checkbutton(self.search_window,text='三击跳转',onvalue=True, offvalue=False, anchor='w',variable=self.var_checkbutton_auto_goto,
+        self.checkbutton_auto_goto=DCheckbutton(self.search_window,text='三击跳转',onvalue=True, offvalue=False, anchor='w',variable=self.var_checkbutton_auto_goto,
                                 bg=WINDOWBG,fg=TEXTFG,activebackground=WINDOWBG,activeforeground=TEXTFG,selectcolor=WIDGETBG)
-        self.checkbutton_auto_goto.place(x=980,y=120,width=100,height=30)
+        self.checkbutton_auto_goto.place(x=980,y=70,width=100,height=30)
         BindTipWindow(self.checkbutton_auto_goto,text='快速点击文本框三次,自动跳转到点击的行的树状图位置.')
         #绑定在最底下
+
+
+        self.button_reset_all = DButton(self.root,text='\uE777', command=self.do_reset_all,
+                                             fg=REDTEXTFG,font=self.font_icon,)
+        self.button_reset_all.place(x=1450, y=70, width=30, height=30)
+        BindTipWindow(self.button_reset_all,text='重置',text_color=REDTEXTFG)
+
+
 
 
         style = ttk.Style()
@@ -356,12 +362,13 @@ class MCLangTools:
                 borderwidth=[('active', 0), ('pressed', 0)],    # 外边框宽度设为 0
                 highlightthickness=[('active', 0), ('pressed', 0)],)    # 高亮边框宽度设为 0
 
-        self.scrollbar_treeview_y = tk.Scrollbar(self.root,bg=WINDOWBG)
-        self.scrollbar_treeview_y.place(x=820, y=170, width=20, height=710)
+        self.scrollbar_treeview_y = DScrollbar(self.root,bg=WINDOWBG)
+        self.scrollbar_treeview_y.place(x=820, y=120, width=20, height=760)
         self.treeview_lang = ttk.Treeview(self.root, show="tree headings", columns=["value"],takefocus=True,
                                           selectmode='browse', yscrollcommand=self.scrollbar_treeview_y.set)
-        self.treeview_lang.place(x=20, y=170, width=800, height=710)
+        self.treeview_lang.place(x=20, y=120, width=800, height=760)
         self.scrollbar_treeview_y.config(command=self.treeview_lang.yview)
+        SetBorder(self.treeview_lang,)
 
         self.treeview_lang.heading("#0", text="键", anchor='center')
         self.treeview_lang.heading("value", text="值", anchor='center')
@@ -390,13 +397,13 @@ class MCLangTools:
                           bg=TEXTBG, fg=TEXTFG, selectbackground=HIGHLIGHT, selectforeground=TEXTFG,
                           insertbackground=HIGHLIGHT, insertontime=500, insertofftime=500, insertwidth=2,
                           font='consolas 12', bd=1, relief='solid', wrap='none', undo=True, state='disabled',)
+        SetBorder(self.text_lang)
+        self.text_lang.place(x=860, y=120, width=600, height=740)
 
-        self.text_lang.place(x=860, y=170, width=600, height=690)
-
-        self.scrollbar_text_y = tk.Scrollbar(self.root, command=self.text_lang.yview,bg=WINDOWBG)
-        self.scrollbar_text_y.place(x=1460 , y=170, width=20, height=710)
+        self.scrollbar_text_y = DScrollbar(self.root, command=self.text_lang.yview,bg=WINDOWBG)
+        self.scrollbar_text_y.place(x=1460 , y=120, width=20, height=760)
         
-        self.scrollbar_text_x = tk.Scrollbar(self.root, orient='horizontal', command=self.text_lang.xview,bg=WINDOWBG)
+        self.scrollbar_text_x = DScrollbar(self.root, orient='horizontal', command=self.text_lang.xview,bg=WINDOWBG)
         self.scrollbar_text_x.place(x=860, y=860, width=600, height=20)
 
         self.text_lang.config(yscrollcommand=self.scrollbar_text_y.set, xscrollcommand=self.scrollbar_text_x.set)
@@ -1439,7 +1446,7 @@ class MCLangTools:
 
         var_replace=tk.BooleanVar()
         var_replace.trace_add('write',lambda *_:change_replace_state())
-        checkbutton_replace_label=tk.Checkbutton(self.search_window,text='替换为:',onvalue=True, offvalue=False, anchor='w',variable=var_replace,
+        checkbutton_replace_label=DCheckbutton(self.search_window,text='替换为:',onvalue=True, offvalue=False, anchor='w',variable=var_replace,
                                                  bg=WINDOWBG,fg=TEXTFG,activebackground=WINDOWBG,activeforeground=TEXTFG,selectcolor=WIDGETBG)
         checkbutton_replace_label.place(x=20,y=70,width=90,height=30)
 
@@ -1464,14 +1471,14 @@ class MCLangTools:
 
         var_loop_search = tk.BooleanVar()
         var_loop_search.set(True)
-        checkbutton_loop_search = tk.Checkbutton(self.search_window, text='循环查找', anchor='w',
+        checkbutton_loop_search = DCheckbutton(self.search_window, text='循环查找', anchor='w',
                                                  variable=var_loop_search, onvalue=True, offvalue=False, 
                                                  bg=WINDOWBG,fg=TEXTFG,activebackground=WINDOWBG,activeforeground=TEXTFG,selectcolor=WIDGETBG)
         checkbutton_loop_search.place(x=120, y=120, width=90, height=30)
 
         var_case_sensitive_search = tk.BooleanVar()
         var_case_sensitive_search.set(False)
-        checkbutton_case_sensitive_search = tk.Checkbutton(self.search_window, text='区分大小写', anchor='w',
+        checkbutton_case_sensitive_search = DCheckbutton(self.search_window, text='区分大小写', anchor='w',
                                                             variable=var_case_sensitive_search, onvalue=True, offvalue=False, 
                                                             bg=WINDOWBG,fg=TEXTFG,activebackground=WINDOWBG,activeforeground=TEXTFG,selectcolor=WIDGETBG,)
         
@@ -1479,7 +1486,7 @@ class MCLangTools:
 
         var_strict_search = tk.BooleanVar()
         var_strict_search.set(False)
-        checkbutton_strict_search = tk.Checkbutton(self.search_window, text='严格查找', anchor='w', 
+        checkbutton_strict_search = DCheckbutton(self.search_window, text='全字匹配', anchor='w', 
                                                 variable=var_strict_search, onvalue=True, offvalue=False, 
                                                 bg=WINDOWBG,fg=TEXTFG,activebackground=WINDOWBG,activeforeground=TEXTFG,selectcolor=WIDGETBG, )
         checkbutton_strict_search.place(x=340, y=120, width=90, height=30)
@@ -1530,7 +1537,7 @@ class MCLangTools:
             """替换按钮逻辑：
             - 勾选「循环查找」：一次性替换所有符合条件的值
             - 未勾选：从当前选中行向下找第一项匹配并替换，再选中该项；下次继续向下
-            仅作用于值列；严格查找要求值与查找内容完全一致。
+            仅作用于值列；全字匹配要求值与查找内容完全一致。
             """
             query = entry_search.get()
             if not query.strip():
@@ -1600,7 +1607,7 @@ class MCLangTools:
                         parent=self.search_window,
                         title='替换',
                         text_blod=f'无可替换的"{query}"',
-                        text='请检查输入内容,严格查找与区分大小写选项.',
+                        text='请检查输入内容,区分大小写与全字匹配选项.',
                         icon='info',
                         )
                 entry_search.focus()
@@ -2033,7 +2040,7 @@ class MCLangTools:
         tk.Label(self.about_window,bg=WINDOWBG,fg=TEXTFG,text='软件概述:',anchor='w').place(x=20,y=140,width=90,height=30)
         label_introduction=tk.Label(self.about_window,bg=WINDOWBG,fg=SECONDARYTEXTFG,text='一款以树状图形式呈现并编辑Minecraft语言文件的编辑软件.',anchor='w')
         label_introduction.place(x=110,y=140,height=30)
-        BindTipWindow(label_introduction,text="万岁老桃首创\"树状图+文本框\"双工作区模式,让预览与编辑融为一体!",width=450)
+        BindTipWindow(label_introduction,text="老桃基于\"老桃制度 万岁思想 本真观念\"所设计的软件.\n万岁首创\"树状图+文本框\"双工作区模式,让预览与编辑融为一体!",width=450)
 
 
         tk.Label(self.about_window,bg=WINDOWBG,fg=TEXTFG,text='当前版本:',anchor='w').place(x=20,y=180,width=90,height=30)
