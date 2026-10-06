@@ -3,8 +3,10 @@
 import tkinter as tk
 import tkinter.ttk as ttk
 import tkinter.font as tkfont
-import ctypes,winreg,win32api,win32con,win32gui,os,playsound,pathlib,threading,sys
+import ctypes,winreg,win32api,win32con,win32gui,os,playsound,pathlib,threading,math,subprocess
 from PIL import Image,ImageTk
+
+from pathlib import Path
 libresource=str(pathlib.Path(__file__).parent.resolve() / 'libresource')+'/'
 
 
@@ -35,15 +37,53 @@ ICON_BIG = 1
 user32 = ctypes.windll.user32
 DESKTOP_ALL = 0x000F01FF
 
+
+
+def SetDarkTitleBar(window,):
+    """
+    仅适用于 Windows 10 版本 17763+ 和 Windows 11
+    """
+
+    try:
+        window.update()
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+        set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        get_parent = ctypes.windll.user32.GetParent
+        hwnd = get_parent(window.winfo_id())
+        rendering_policy = ctypes.c_int(1)
+        
+        set_window_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 
+                            ctypes.byref(rendering_policy), 
+                            ctypes.sizeof(rendering_policy))
+
+        ctypes.windll.user32.SendMessageW(hwnd, 0x0086, 0, 0) # 先设为非活动
+        ctypes.windll.user32.SendMessageW(hwnd, 0x0086, 1, 0) # 再设回活动状态
+    except:
+        pass
+
+
+
+
+
+
+ 
+HIGHLIGHT='#0078D7' 
+DISABLED='#6D6D6D'
+GREENLIGHT='#06B025'
+LINK='#5353FF'
+YELLOWTEXTFG="#FFCC00"
+TITLEBAR_ACTIVE='#000000'
+TITLEBAR_INACTIVE='#2B2B2B'
+
+
+
 if IsDarkMode():
     TITLEBARBG='#000000'
     WINDOWBG='#202020'
     TEXTFG="#f1f1f1"
-    #TOASTBG='#1F1F1F'
     SECONDARYTEXTFG='#9B9B9B'
     WIDGETBG="#2b2b2b"
     TEXTBG="#3C3C3C"
-   # FRAMEBG='#363636'
     REDTEXTFG="#FF2828"
     BDCOLOR="#616161"
     FULLALPHA=0.4
@@ -51,27 +91,71 @@ if IsDarkMode():
 else:
     TITLEBARBG='#ffffff'
     WINDOWBG='#f0f0f0'
-    #TOASTBG='#F1F1F1'
     TEXTFG="#000000"
     SECONDARYTEXTFG="#2D2D2D"
-   # FRAMEBG='#f0f0f0'
     WIDGETBG='#f0f0f0'
     TEXTBG="#ffffff"
     REDTEXTFG="#c20000"
     BDCOLOR="#ADADAD"
     FULLALPHA=0.2
     HALFALPHA=0.1
-    def SetDarkTitleBar(_):pass
-
 TOASTBG=WINDOWBG
 
-HIGHLIGHT='#0078D7' 
-DISABLED='#6D6D6D'
-GREENLIGHT='#06B025'
-LINK='#5353FF'
 
-TITLEBAR_ACTIVE='#000000'
-TITLEBAR_INACTIVE='#2B2B2B'
+
+
+
+def OpenTouchKeyboard():
+    """
+    唤起 Windows 现代触控键盘（TabTip / 任务栏右边那个）
+    调用一次即可保证打开（已打开则不会关掉，纯唤起）
+    """
+    tabtip_paths = [
+        r"C:\Program Files\Common Files\microsoft shared\ink\TabTip.exe",
+        r"C:\Program Files (x86)\Common Files\microsoft shared\ink\TabTip.exe"]
+    # 1. 优先用 COM 接口 Toggle（最干净、最符合系统行为）
+    try:
+        import win32gui
+        from ctypes import HRESULT
+        from ctypes.wintypes import HWND
+        from comtypes import IUnknown, GUID, COMMETHOD
+        import comtypes.client
+        class ITipInvocation(IUnknown):
+            _iid_ = GUID("{37c994e7-432b-4834-a2f7-dce1f13b834b}")
+            _methods_ = [
+                COMMETHOD([], HRESULT, "Toggle", (['in'], HWND, "hwndDesktop"))
+            ]
+        comtypes.CoInitialize()
+        try:
+            tip = comtypes.client.CreateObject(
+                "{4ce576fa-83dc-4F88-951c-9d0782b4e376}",
+                interface=ITipInvocation
+            )
+            tip.Toggle(win32gui.GetDesktopWindow())
+            return True
+        finally:
+            comtypes.CoUninitialize()
+    except Exception:
+        pass  # COM 失败就走下面兜底
+    # 2. 兜底：直接启动 TabTip.exe（进程不存在时必须先启动）
+    for path in tabtip_paths:
+        if Path(path).exists():
+            try:
+                # 用 start 方式启动，避免阻塞
+                subprocess.Popen(
+                                    [path],
+                                    shell=False,
+                                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                                )  
+                return True
+            except Exception:
+                continue
+    try:
+        os.system(r'start "" "C:\Program Files\Common Files\microsoft shared\ink\TabTip.exe"')
+        return True
+    except Exception:
+        return False
+
 
 
 
@@ -110,28 +194,47 @@ def SetParent(parent,child):
     b_back=u32.GetParent(child.winfo_id())
     u32.SetParent(b_back,parent.winfo_id())
 
-
-def SetDarkTitleBar(window):
+def SetExpandedTreeviewRowColor(widget, color1=WIDGETBG, color2=TEXTBG, fore_color=TEXTFG):
     """
-    仅适用于 Windows 10 版本 17763+ 和 Windows 11
+    为Treeview设置交替行颜色（仅针对可见/已展开的行）
+    :param widget: Treeview实例
+    :param color1: 奇数行背景色 (默认WIDGETBG)
+    :param color2: 偶数行背景色 (默认TEXTBG)
     """
-    if IsDarkMode():
-        try:
-            window.update()
-            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-            set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
-            get_parent = ctypes.windll.user32.GetParent
-            hwnd = get_parent(window.winfo_id())
-            rendering_policy = ctypes.c_int(1)
+    # 1. 定义两个标签并配置颜色
+    widget.tag_configure('odd_row', background=color1, foreground=fore_color)
+    widget.tag_configure('even_row', background=color2, foreground=fore_color)
+    
+    # 2. 递归获取所有可见（已展开）的节点
+    def get_visible_items(parent=''):
+        items = []
+        for child in widget.get_children(parent):
+            items.append(child)
+            # 只有当子节点展开时才递归获取
+            if widget.item(child, 'open'):
+                items.extend(get_visible_items(child))
+        return items
+    
+    # 3. 获取所有可见节点
+    visible_items = get_visible_items()
+    
+    # 4. 遍历所有可见节点，按视觉顺序分配标签
+    for index, item in enumerate(visible_items):
+        # index 为偶数 -> even_row, index 为奇数 -> odd_row
+        tag = 'even_row' if index % 2 == 0 else 'odd_row'
+        
+        # 获取该节点原有的 tags (避免覆盖其他状态标签)
+        current_tags = widget.item(item, 'tags')
+        if isinstance(current_tags, str):
+            current_tags = (current_tags,)
             
-            set_window_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 
-                                ctypes.byref(rendering_policy), 
-                                ctypes.sizeof(rendering_policy))
+        # 移除旧的颜色标签 (防止重复调用时标签叠加)
+        new_tags = [t for t in current_tags if t not in ('odd_row', 'even_row')]
+        new_tags.append(tag)
+        
+        # 重新设置 tags
+        widget.item(item, tags=tuple(new_tags))
 
-            ctypes.windll.user32.SendMessageW(hwnd, 0x0086, 0, 0) # 先设为非活动
-            ctypes.windll.user32.SendMessageW(hwnd, 0x0086, 1, 0) # 再设回活动状态
-        except:
-            pass
 
 def GetWorkArea():
     """返回主显示器工作区: (x, y, width, height)"""
@@ -269,7 +372,13 @@ def get_windows_accent_color():
     except WindowsError:
         return None
 
-
+def TkEntryMoveToRightSelectAll(widget):
+    # 2. 选中所有文本
+    widget.select_range(0, 'end')
+    # 3. 将光标移至最右侧（末尾）
+    widget.icursor('end')
+    # 4. 将可视区域（滚动条/视口）移动到最右侧
+    widget.xview_moveto(1.0)
 
 def SetBorder(widget, mode='pack', bd=1, focusbd=1, color=BDCOLOR, focuscolor=HIGHLIGHT):
     current_bd = [bd]          # 用列表方便闭包修改
@@ -464,257 +573,7 @@ def BindTipWindow(widget, text='', insert_picture_path=None, text_color=TEXTFG,b
 
 
 
-
-'''
-class DButton(tk.Label):
-    def __init__(self, master, command=None, text='', default='normal',
-                 bg=WIDGETBG, fg=TEXTFG, justify='center',
-                 anchor='center', state='normal', takefocus=True,
-                 **kw):
-        super().__init__(master, **kw)
-        self.command = command
-        self.bg = bg
-        self.fg = fg
-        self['fg'] = fg
-        self['bg'] = bg
-        self['text'] = text
-        self['anchor'] = anchor
-        self["justify"] = justify
-        self._default = default
-        self._state = state
-        self._takefocus = takefocus          # 记住用户期望的 takefocus
-        self['takefocus'] = False if state == 'disabled' else takefocus
-
-        self['bd'] = 1
-        self['relief'] = 'solid'
-        self.pack_propagate(False)
-
-        self._key_pressed = False
-        self._pressed_inside = False
-        self._hover = False
-
-        self.default_change(self._default)
-        self.bind_command()
-        self.bind('<Enter>', self.on_enter)
-        self.bind('<Leave>', self.on_leave)
-        self.bind("<KeyPress-space>", self.on_space_press)
-        self.bind("<KeyRelease-space>", self.on_space_release)
-        self.bind('<Tab>', self.on_space_release_esc)
-        self.bind('<FocusOut>', self.on_space_release)
-        self.bind('<Escape>', self.on_space_release_esc)
-
-        self.refresh_button_look()
-
-        try:
-            self.winfo_toplevel().bind('<Return>', self.on_space_press_and_default, add='+')
-            self.winfo_toplevel().bind('<KeyRelease-Return>', self.on_space_release_and_default, add='+')
-        except:
-            pass
-
-    def on_space_press_and_default(self, event):
-        if self.default == 'active':
-            self.on_space_press(event)
-
-    def on_space_release_and_default(self, event):
-        if self.default == 'active':
-            self.on_space_release(event)
-
-    def on_space_release_esc(self, event):
-        self.on_space_release(event, focusout=True)
-
-    def __setitem__(self, key, value):
-        if key == 'default':
-            if self.state == 'disabled':
-                self.default = 'normal'
-            else:
-                self.default = value
-        elif key == 'state':
-            self.state = value
-        elif key == 'command':
-            self.command = value
-        elif key == 'takefocus':
-            self._takefocus = value
-            # 只有在非 disabled 时才真正生效
-            if self.state != 'disabled':
-                super().__setitem__('takefocus', value)
-            else:
-                super().__setitem__('takefocus', False)
-        else:
-            super().__setitem__(key, value)
-
-    def configure(self, cnf=None, **kw):
-        if 'default' in kw:
-            new_default = kw.pop('default')
-            self.default = new_default
-
-        if 'state' in kw:
-            new_state = kw.pop('state')
-            self.state = new_state
-
-        if 'bg' in kw:
-            self.bg = kw['bg']
-        if 'fg' in kw:
-            self.fg = kw['fg']
-        if 'command' in kw:
-            self.command = kw['command']
-
-        if 'takefocus' in kw:
-            new_takefocus = kw.pop('takefocus')
-            self._takefocus = new_takefocus
-            # 只有在非 disabled 时才真正生效
-            if self.state != 'disabled':
-                kw['takefocus'] = new_takefocus
-            else:
-                kw['takefocus'] = False
-
-        if kw or cnf:
-            return super().configure(cnf, **kw)
-
-    config = configure
-
-    @property
-    def default(self):
-        return self._default
-
-    @default.setter
-    def default(self, value):
-        if self._default != value:
-            self._default = value
-            self.default_change(value)
-
-    def default_change(self, value):
-        self.refresh_button_look()
-
-    @property
-    def state(self):
-        return self._state
-
-    @state.setter
-    def state(self, value):
-        if self._state != value:
-            self._state = value
-            self.state_change(value)
-
-    def state_change(self, value):
-        self.refresh_button_look()
-
-    # 统一外观刷新函数
-    def refresh_button_look(self):
-        bg = self.bg
-        bd = 1
-
-        # 1. 基础 hover 状态 (未按下鼠标)
-        if self._hover and not (self._pressed_inside or self._key_pressed):
-            bg = AlphaBlend(HIGHLIGHT, self.bg, HALFALPHA)
-            bd = 1
-
-        # 2. 激活/按下状态 (鼠标在按钮内按下，或键盘空格按下)
-        if (self._pressed_inside and self._hover) or self._key_pressed:
-            bg = AlphaBlend(HIGHLIGHT, self.bg, FULLALPHA)
-            bd = 1
-
-        # 3. 特殊状态：鼠标在内部按下后，移到了按钮外部
-        elif self._pressed_inside and not self._hover:
-            bg = AlphaBlend(HIGHLIGHT, self.bg, HALFALPHA)
-            bd = 1
-
-        # 4. Default 边框逻辑 (仅在非按下、非悬停时显示 active 粗边框)
-        elif self.default == 'active':
-            if self._hover:
-                bd = 1
-            else:
-                bd = 3
-
-        # 5. 禁用状态 (最高优先级覆盖)
-        if self.state == 'disabled':
-            bg = AlphaBlend(DISABLED, WIDGETBG, foreground_alpha=0.5)
-
-
-
-        self['bg'] = bg
-        self['bd'] = bd
-
-    # =========================
-    # 事件（仅改状态 + 刷新）
-    # =========================
-    def on_enter(self, event):
-        if self.state != 'disabled':
-            self._hover = True
-            self.refresh_button_look()
-
-    def on_leave(self, event):
-        if self.state != 'disabled':
-            self._hover = False
-            self.refresh_button_look()
-
-    def on_space_press(self, event):
-        if self.state != 'disabled':
-            self._key_pressed = True
-            self.refresh_button_look()
-
-    def on_space_release(self, event, focusout=False):
-        if self.state != 'disabled':
-            if self._key_pressed or focusout:
-                self._key_pressed = False
-
-                x, y = event.widget.winfo_pointerxy()
-                widget = event.widget.winfo_containing(x, y)
-
-                if widget != self:
-                    self._hover = False
-
-                if focusout:
-                    self._pressed_inside = False
-
-                self.refresh_button_look()
-
-                if self.command and not focusout:
-                    self.command()
-
-    def bind_command(self):
-        self._pressed_inside = False
-
-        def handle_press(event):
-            if self.state != 'disabled':
-                self._pressed_inside = True
-                self.focus()
-                self.refresh_button_look()
-
-        def handle_release(event):
-            if self.state != 'disabled':
-                x, y = event.widget.winfo_pointerxy()
-                widget = event.widget.winfo_containing(x, y)
-
-                _pressed_inside_temp = self._pressed_inside
-                self._pressed_inside = False
-
-                self.refresh_button_look()
-                if _pressed_inside_temp and widget == self and self.command is not None:
-                    self.command()
-
-        self.bind("<Button-1>", handle_press, add='+')
-        self.bind("<Button-1>", lambda _: self.focus_set(), add='+')
-        self.bind("<ButtonRelease-1>", handle_release)
-
-    def AlphaBlend(self, foreground_hex, background_hex, foreground_alpha=1.0):
-        fg = foreground_hex.lstrip('#').lower()
-        bg = background_hex.lstrip('#').lower()
-
-        bg_r = int(bg[0:2], 16)
-        bg_g = int(bg[2:4], 16)
-        bg_b = int(bg[4:6], 16)
-
-        fg_r = int(fg[0:2], 16)
-        fg_g = int(fg[2:4], 16)
-        fg_b = int(fg[4:6], 16)
-
-        out_r = round(fg_r * foreground_alpha + bg_r * (1 - foreground_alpha))
-        out_g = round(fg_g * foreground_alpha + bg_g * (1 - foreground_alpha))
-        out_b = round(fg_b * foreground_alpha + bg_b * (1 - foreground_alpha))
-
-        return "#{:02x}{:02x}{:02x}".format(out_r, out_g, out_b).upper()
-'''
-
+"""
 #自己的边框
 class DButton(tk.Label):
     def __init__(self, master, command=None, text='', default='normal',
@@ -759,26 +618,39 @@ class DButton(tk.Label):
 
         self.default_change(self._default)
         self.bind_command()
-        self.bind('<Enter>', self.on_enter)
-        self.bind('<Leave>', self.on_leave)
-        self.bind("<KeyPress-space>", self.on_space_press)
-        self.bind("<KeyRelease-space>", self.on_space_release)
-        self.bind('<Tab>', self.on_space_release_esc)
+        self.bind('<Enter>', self.on_enter,add='+')
+        self.bind('<Leave>', self.on_leave,add='+')
+        self.bind("<KeyPress-space>", self.on_space_press,add='+')
+        self.bind("<KeyRelease-space>", self.on_space_release,add='+')
+        self.bind('<Tab>', self.on_space_release_esc,add='+')
         self.bind('<FocusIn>', self.refresh_button_look,add='+')
         self.bind('<FocusOut>', self.refresh_button_look,add='+')
         self.bind('<FocusOut>', self.on_space_release,add='+')
-        self.bind('<Escape>', self.on_space_release_esc)
+        self.bind('<Escape>', self.on_space_release_esc,add='+')
 
         self.bind('<Configure>', self._on_resize)
         self.refresh_button_look()
 
+        self.bind_default_active()
+
+    def bind_default_active(self,):
         try:
-            self.winfo_toplevel().bind('<Return>', self.on_space_press_and_default, add='+')
-            self.winfo_toplevel().bind('<KeyRelease-Return>', self.on_space_release_and_default, add='+')
+            self.bind_id_return=self.winfo_toplevel().bind('<Return>', self.on_space_press_and_default, add='+')
+            self.bind_id_return_release_return=self.winfo_toplevel().bind('<KeyRelease-Return>', self.on_space_release_and_default, add='+')
+            return True
         except:
-            pass
+            return False
+        
+    def unbind_default_active(self,):
+        try:
+            self.winfo_toplevel().unbind('<Return>', funcid=self.bind_id_return)
+            self.winfo_toplevel().unbind('<KeyRelease-Return>',funcid=self.bind_id_return_release_return)
+            return True
+        except:
+            return False
 
     def _on_resize(self, event):
+        
         self._update_border_coords(event.width, event.height)
 
     def _update_border_coords(self, w=None, h=None):
@@ -791,15 +663,17 @@ class DButton(tk.Label):
 
         bd = self._current_bd
 
-        # 更新边框Frame的位置和大小
-       # self._border_top.place_configure(height=bd)
-       # self._border_bottom.place_configure(height=bd)
-      #  self._border_left.place_configure(width=bd)
-       # self._border_right.place_configure(width=bd)
         self._border_top.config(height=bd)
+        self._border_top.lift()
+
         self._border_bottom.config(height=bd)
+        self._border_bottom.lift()
+
         self._border_left.config(width=bd)
+        self._border_left.lift()
+
         self._border_right.config(width=bd)
+        self._border_right.lift()
 
     def on_space_press_and_default(self, event):
         if self.default == 'active':
@@ -845,7 +719,8 @@ class DButton(tk.Label):
         if 'fg' in kw:
             self.fg = kw['fg']
         if 'command' in kw:
-            self.command = kw['command']
+            new_command = kw.pop('command')
+            self.command = new_command
 
         if 'takefocus' in kw:
             new_takefocus = kw.pop('takefocus')
@@ -855,6 +730,7 @@ class DButton(tk.Label):
             else:
                 kw['takefocus'] = False
 
+       
         if kw or cnf:
             return super().configure(cnf, **kw)
 
@@ -938,8 +814,6 @@ class DButton(tk.Label):
         self._update_border_coords()
 
 
-
-
     # =========================
     # 事件（仅改状态 + 刷新）
     # =========================
@@ -977,6 +851,7 @@ class DButton(tk.Label):
                 if self.command and not focusout:
                     self.command()
 
+
     def bind_command(self):
         self._pressed_inside = False
 
@@ -1001,11 +876,333 @@ class DButton(tk.Label):
         self.bind("<Button-1>", handle_press, add='+')
         self.bind("<Button-1>", lambda _: self.focus_set(), add='+')
         self.bind("<ButtonRelease-1>", handle_release)
+"""
 
 
 
+class DButton(tk.Label):
+    """
+    深色模式自定义按钮控件（基于 Label + 四边 Frame 边框实现）
+
+    完全兼容原有接口，可直接替换旧版 DButton。
+    支持：
+        - default: 'normal' / 'active'（激活时显示加粗高亮边框）
+        - state:   'normal' / 'disabled'
+        - command: 点击/空格/回车（仅 active 时）触发
+        - 鼠标悬停、按下、焦点高亮、键盘空格/回车/Escape 行为
+        - 动态边框宽度与颜色
+    """
+
+    def __init__(self, master, command=None, text='', default='normal',
+                 bg=WIDGETBG, fg=TEXTFG, justify='center',
+                 anchor='center', state='normal', takefocus=True,
+                 **kw):
+        super().__init__(master, **kw)
+
+        # ---------- 基础属性 ----------
+        self.command = command
+        self.bg = bg
+        self.fg = fg
+        self._default = default
+        self._state = state
+        self._takefocus = takefocus          # 用户期望的 takefocus 值
+
+        # 初始化 Label 外观
+        self['fg'] = fg
+        self['bg'] = bg
+        self['text'] = text
+        self['anchor'] = anchor
+        self['justify'] = justify
+        self['takefocus'] = False if state == 'disabled' else takefocus
+        self['bd'] = 0
+        self['relief'] = 'flat'
+        self.pack_propagate(False)
+
+        # ---------- 四边边框 Frame ----------
+        self._border_top = tk.Frame(self, bg=BDCOLOR, height=1)
+        self._border_bottom = tk.Frame(self, bg=BDCOLOR, height=1)
+        self._border_left = tk.Frame(self, bg=BDCOLOR, width=1)
+        self._border_right = tk.Frame(self, bg=BDCOLOR, width=1)
+
+        self._border_top.pack(fill='x', side='top')
+        self._border_bottom.pack(fill='x', side='bottom')
+        self._border_left.pack(fill='y', side='left')
+        self._border_right.pack(fill='y', side='right')
+
+        # ---------- 内部状态 ----------
+        self._key_pressed = False           # 空格键是否正在按下
+        self._pressed_inside = False        # 鼠标是否在按钮内按下
+        self._hover = False                 # 鼠标是否悬停
+        self._current_bd = 1                # 当前边框宽度
+
+        # 初始化外观与事件绑定
+        self.default_change(self._default)
+        self._bind_events()
+        self.refresh_button_look()
+        self.bind_default_active()
+
+    # ==================================================================
+    # 公共接口（保持与旧版完全兼容）
+    # ==================================================================
+
+    def bind_default_active(self):
+        """绑定顶级窗口的 Return 键，使 active 按钮响应回车"""
+        try:
+            top = self.winfo_toplevel()
+            self.bind_id_return = top.bind('<Return>', self._on_return_press, add='+')
+            self.bind_id_return_release = top.bind('<KeyRelease-Return>', self._on_return_release, add='+')
+            return True
+        except Exception:
+            return False
+
+    def unbind_default_active(self):
+        """取消顶级窗口的 Return 键绑定"""
+        try:
+            top = self.winfo_toplevel()
+            top.unbind('<Return>', funcid=self.bind_id_return)
+            top.unbind('<KeyRelease-Return>', funcid=self.bind_id_return_release)
+            return True
+        except Exception:
+            return False
+
+    def __setitem__(self, key, value):
+        if key == 'default':
+            self.default = 'normal' if self.state == 'disabled' else value
+        elif key == 'state':
+            self.state = value
+        elif key == 'command':
+            self.command = value
+        elif key == 'takefocus':
+            self._takefocus = value
+            super().__setitem__('takefocus', False if self.state == 'disabled' else value)
+        else:
+            super().__setitem__(key, value)
+
+    def configure(self, cnf=None, **kw):
+        if 'default' in kw:
+            self.default = kw.pop('default')
+        if 'state' in kw:
+            self.state = kw.pop('state')
+        if 'bg' in kw:
+            self.bg = kw['bg']
+        if 'fg' in kw:
+            self.fg = kw['fg']
+        if 'command' in kw:
+            self.command = kw.pop('command')
+        if 'takefocus' in kw:
+            self._takefocus = kw.pop('takefocus')
+            kw['takefocus'] = False if self.state == 'disabled' else self._takefocus
+
+        if kw or cnf:
+            return super().configure(cnf, **kw)
 
 
+
+    config = configure
+
+    # ---------- 属性：default ----------
+    @property
+    def default(self):
+        return self._default
+
+    @default.setter
+    def default(self, value):
+        if self._default != value:
+            self._default = value
+            self.default_change(value)
+
+    def default_change(self, value):
+        """default 属性变化时刷新外观"""
+        self.refresh_button_look()
+
+    # ---------- 属性：state ----------
+    @property
+    def state(self):
+        return self._state
+
+    @state.setter
+    def state(self, value):
+        if self._state != value:
+            self._state = value
+            self.state_change(value)
+
+    def state_change(self, value):
+        """state 属性变化时刷新外观，并同步 takefocus"""
+        if value == 'disabled':
+            super().__setitem__('takefocus', False)
+        else:
+            super().__setitem__('takefocus', self._takefocus)
+        self.refresh_button_look()
+
+    # ==================================================================
+    # 外观刷新（核心逻辑）
+    # ==================================================================
+
+    def refresh_button_look(self, event=None):
+        """
+        统一刷新按钮背景色与边框颜色/宽度。
+        优先级（从高到低）：
+            1. disabled
+            2. 按下状态（鼠标在内部或空格键）
+            3. 悬停 / 焦点
+            4. default == 'active' 时的加粗边框
+        """
+        bg = self.bg
+        bd = 1
+        border_color = BDCOLOR
+
+        # 焦点高亮
+        if self.focus_get() == self:
+            border_color = HIGHLIGHT
+
+        # 1. 悬停（未按下）
+        if self._hover and not (self._pressed_inside or self._key_pressed):
+            bg = AlphaBlend(HIGHLIGHT, self.bg, HALFALPHA)
+            border_color = HIGHLIGHT
+
+        # 2. 按下（鼠标在按钮内或空格键）
+        if (self._pressed_inside and self._hover) or self._key_pressed:
+            bg = AlphaBlend(HIGHLIGHT, self.bg, FULLALPHA)
+            border_color = HIGHLIGHT
+
+        # 3. 鼠标按下后移出按钮
+        elif self._pressed_inside and not self._hover:
+            bg = AlphaBlend(HIGHLIGHT, self.bg, HALFALPHA)
+            border_color = HIGHLIGHT
+
+        # 4. default == 'active' 且非悬停时加粗边框
+        elif self.default == 'active' and not self._hover:
+            bd = 2
+            border_color = HIGHLIGHT
+
+        # 5. 禁用状态（最高优先级）
+        if self.state == 'disabled':
+            bg = AlphaBlend(DISABLED, WIDGETBG, foreground_alpha=0.5)
+            border_color = BDCOLOR
+            bd = 1
+
+        self._current_bd = bd
+        self['bg'] = bg
+
+        # 更新四边边框颜色
+        for border in (self._border_top, self._border_bottom,
+                       self._border_left, self._border_right):
+            border['bg'] = border_color
+
+        self._update_border_size()
+
+    def _update_border_size(self, w=None, h=None):
+        """根据当前 _current_bd 更新四边 Frame 的尺寸"""
+        if w is None:
+            w = self.winfo_width()
+        if h is None:
+            h = self.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+
+        bd = self._current_bd
+        self._border_top.config(height=bd)
+        self._border_bottom.config(height=bd)
+        self._border_left.config(width=bd)
+        self._border_right.config(width=bd)
+
+        # 确保边框始终在最上层
+        self._border_top.lift()
+        self._border_bottom.lift()
+        self._border_left.lift()
+        self._border_right.lift()
+
+    def _on_resize(self, event):
+        """窗口尺寸变化时同步边框尺寸"""
+        self._update_border_size(event.width, event.height)
+
+    # ==================================================================
+    # 事件绑定与处理
+    # ==================================================================
+
+    def _bind_events(self):
+        """统一绑定所有交互事件"""
+        self.bind('<Enter>', self._on_enter, add='+')
+        self.bind('<Leave>', self._on_leave, add='+')
+        self.bind('<KeyPress-space>', self._on_space_press, add='+')
+        self.bind('<KeyRelease-space>', self._on_space_release, add='+')
+        self.bind('<Tab>', self._on_space_release_esc, add='+')
+        self.bind('<FocusIn>', self.refresh_button_look, add='+')
+        self.bind('<FocusOut>', self.refresh_button_look, add='+')
+        self.bind('<FocusOut>', self._on_space_release, add='+')
+        self.bind('<Escape>', self._on_space_release_esc, add='+')
+        self.bind('<Configure>', self._on_resize)
+
+        # 鼠标按下 / 释放
+        self.bind('<Button-1>', self._on_mouse_press, add='+')
+        self.bind('<Button-1>', lambda e: self.focus_set(), add='+')
+        self.bind('<ButtonRelease-1>', self._on_mouse_release)
+
+    # ---------- 鼠标事件 ----------
+    def _on_enter(self, event):
+        if self.state != 'disabled':
+            self._hover = True
+            self.refresh_button_look()
+
+    def _on_leave(self, event):
+        if self.state != 'disabled':
+            self._hover = False
+            self.refresh_button_look()
+
+    def _on_mouse_press(self, event):
+        if self.state != 'disabled':
+            self._pressed_inside = True
+            self.focus()
+            self.refresh_button_look()
+
+    def _on_mouse_release(self, event):
+        if self.state != 'disabled':
+            x, y = event.widget.winfo_pointerxy()
+            widget = event.widget.winfo_containing(x, y)
+
+            was_pressed = self._pressed_inside
+            self._pressed_inside = False
+            self.refresh_button_look()
+
+            if was_pressed and widget == self and self.command is not None:
+                self.command()
+
+    # ---------- 键盘空格 / Escape / Tab ----------
+    def _on_space_press(self, event):
+        if self.state != 'disabled':
+            self._key_pressed = True
+            self.refresh_button_look()
+
+    def _on_space_release(self, event, focusout=False):
+        if self.state != 'disabled':
+            if self._key_pressed or focusout:
+                self._key_pressed = False
+
+                x, y = event.widget.winfo_pointerxy()
+                widget = event.widget.winfo_containing(x, y)
+                if widget != self:
+                    self._hover = False
+
+                if focusout:
+                    self._pressed_inside = False
+
+                self.refresh_button_look()
+
+                if self.command and not focusout:
+                    self.command()
+
+    def _on_space_release_esc(self, event):
+        """Tab / Escape 时强制释放按下状态（不触发 command）"""
+        self._on_space_release(event, focusout=True)
+
+    # ---------- 回车键（仅 default=='active' 时响应） ----------
+    def _on_return_press(self, event):
+        if self.default == 'active':
+            self._on_space_press(event)
+
+    def _on_return_release(self, event):
+        if self.default == 'active':
+            self._on_space_release(event)
 
 
 class DCheckbutton(tk.Frame):
@@ -2137,6 +2334,8 @@ class DCombobutton(tk.Frame):
 
 '''
 
+
+
 #自己的边框
 class DEntry(tk.Entry):
     def __init__(self, master,
@@ -2176,6 +2375,13 @@ class DEntry(tk.Entry):
             selectbackground=selectbackground,
             selectforeground=selectforeground
         )
+
+        # DEntry 本身就是输入框，保证可聚焦（容器类控件的焦点应落到其子 Entry）
+        try:
+            if str(self.cget('state')) != 'disabled':
+                self.configure(takefocus=1)
+        except Exception:
+            pass
 
         if self._border:
             self._create_borders()
@@ -2276,7 +2482,7 @@ class DCombobutton(tk.Frame):
         self['bg'] = TEXTBG
 
         self.close_list_command = close_list_command
-        self.values = values
+        self.values = list(values)
         self._current_bd = 1
         self._border_color = BDCOLOR
         self._focus = False
@@ -2296,7 +2502,7 @@ class DCombobutton(tk.Frame):
         self.Entry = DEntry(self, border=False)
         self.Entry.config(bd=0, **combobox_kwargs)
 
-        self.DButton_show_list = DAlphaButton(self, text=' ∨ ', command=self.tell_show_list, bd=0)
+        self.DButton_show_list = DAlphaButton(self, text='  ∨  ', command=self.tell_show_list, bd=0,bg=TEXTBG)
         self.DButton_show_list.pack(side='right', fill='y')
         self.Entry.pack(side='left', expand=1, fill='both')
 
@@ -2304,6 +2510,20 @@ class DCombobutton(tk.Frame):
         self.Entry.bind('<Up>', self.entry_up)
         self.Entry.bind('<Down>', self.entry_down)
         self.Entry.bind('<space>', self.tell_show_list_space)
+
+        # 容器本身不参与 Tab 焦点，焦点交给内部 Entry
+        try:
+            self.configure(takefocus=0)
+        except Exception:
+            pass
+        try:
+            self.Entry.configure(takefocus=1)
+        except Exception:
+            pass
+        try:
+            self.DButton_show_list.configure(takefocus=0)
+        except Exception:
+            pass
 
         self.bind('<Configure>', self._on_resize, add='+')
         self.bind('<FocusIn>', self._on_focus_in, add='+')
@@ -2343,6 +2563,13 @@ class DCombobutton(tk.Frame):
         self._update_border_color()
 
     def _on_focus_in(self, event=None):
+        # 若焦点落在容器 Frame 上，立刻转给内部 Entry
+        if event is not None and getattr(event, 'widget', None) is self:
+            try:
+                self.Entry.focus_set()
+            except Exception:
+                pass
+            return
         self._focus = True
         self._update_border_color()
 
@@ -2474,13 +2701,13 @@ class DCombobutton(tk.Frame):
 
     def show_list(self):
         def close_window_animation():
-            self.DButton_show_list.config(text=' ∨ ')
+            self.DButton_show_list.config(text='  ∨  ')
             self.Entry.focus()
             self.Toplevel_listwindow.destroy()
         self.close_window_animation = close_window_animation
 
         def open_window_animation():
-            self.DButton_show_list.config(text=' ∧ ')
+            self.DButton_show_list.config(text='  ∧  ')
             self.Toplevel_listwindow.geometry('%dx%d' % (
                 self.winfo_width(), self.Toplevel_listwindow.winfo_reqheight()))
         self.open_window_animation = open_window_animation
@@ -2500,7 +2727,7 @@ class DCombobutton(tk.Frame):
         def close_Toplevel_listwindow_escape(event=None):
             close_window_animation()
 
-        self.DButton_show_list.config(text=' ∧ ')
+        self.DButton_show_list.config(text='  ∧  ')
         self.Toplevel_listwindow = tk.Toplevel(self, class_='Toplevel_listwindow')
         self.Toplevel_listwindow.resizable(0, 0)
         self.Toplevel_listwindow.overrideredirect(True)
@@ -2513,7 +2740,7 @@ class DCombobutton(tk.Frame):
         self.Toplevel_listwindow.bind('<Escape>', close_Toplevel_listwindow_escape)
 
         List_values = tk.Listbox(self.Toplevel_listwindow, bd=1, relief='solid', bg=TEXTBG,
-                                 highlightthickness=0, fg=TEXTFG,
+                                 highlightthickness=0, fg=TEXTFG,font=self.Entry['font'],
                                  activestyle='none', selectmode='browse', exportselection=0,
                                  selectbackground=AlphaBlend(HIGHLIGHT, TEXTBG, 0.5),
                                  selectforeground=TEXTFG, height=min(len(self.values),15))
@@ -2619,10 +2846,10 @@ class DSpinbox(tk.Frame):
         self.Frame_DButton.pack(side='right', fill='both', expand=1)
         self.Entry.pack(side='left', expand=True, fill='both')
 
-        self.DButton_up = DButton(self.Frame_DButton, text='+', command=self.up_number, width=2)
-        self.DButton_up.pack(side='left', fill='both', expand=True, padx=(2,1), pady=2)
-        self.DButton_down = DButton(self.Frame_DButton, text='-', command=self.down_number, width=2)
-        self.DButton_down.pack(side='right', fill='both', expand=True, padx=(1,2), pady=2)
+        self.DButton_up = DAlphaButton(self.Frame_DButton, text='+', command=self.up_number, width=2,bg=TEXTBG)
+        self.DButton_up.pack(side='left', fill='both', expand=True, padx=(0,0), pady=0)
+        self.DButton_down = DAlphaButton(self.Frame_DButton, text='-', command=self.down_number, width=2,bg=TEXTBG)
+        self.DButton_down.pack(side='right', fill='both', expand=True, padx=(0,0), pady=0)
 
         self.Frame_DButton.bind('<Up>', self.up_number)
         self.Frame_DButton.bind('<Down>', self.down_number)
@@ -2632,6 +2859,22 @@ class DSpinbox(tk.Frame):
         self.DButton_down.bind('<Down>', self.down_number)
 
         self._last_valid_value = self.Entry.get()
+
+        # 容器本身不参与 Tab 焦点，焦点交给内部 Entry
+        try:
+            self.configure(takefocus=0)
+        except Exception:
+            pass
+        try:
+            self.Entry.configure(takefocus=1)
+        except Exception:
+            pass
+        try:
+            self.Frame_DButton.configure(takefocus=0)
+            self.DButton_up.configure(takefocus=0)
+            self.DButton_down.configure(takefocus=0)
+        except Exception:
+            pass
 
         widgets = (self, self.Entry, self.Frame_DButton, self.DButton_up, self.DButton_down)
         for w in widgets:
@@ -2669,6 +2912,13 @@ class DSpinbox(tk.Frame):
 
     # ===== 焦点（控制整体边框颜色） =====
     def _focus_in(self, event=None):
+        # 若焦点落在容器 Frame 上，立刻转给内部 Entry
+        if event is not None and getattr(event, 'widget', None) is self:
+            try:
+                self.Entry.focus_set()
+            except Exception:
+                pass
+            return
 
         self._focus = True
         self._update_border_color()
@@ -2828,8 +3078,257 @@ class DSpinbox(tk.Frame):
 
 
 
+class DProgressbar(tk.Frame):
+    """
+    Windows 风格进度条
+    - determinate：只有运动柔光高光（边缘完全融入主体）
+    - indeterminate：纯色块，无高光
+    """
+    def __init__(self, master=None,
+                 orient='horizontal',
+                 length=200,
+                 mode='determinate',
+                 maximum=100,
+                 value=0,
+                 variable=None,
+                 bg=WIDGETBG,
+                 barcolor=GREENLIGHT,
+                 bd=1,
+                 **kw):
 
+        super().__init__(master, bg=bg, bd=0, highlightthickness=0, **kw)
 
+        self._maximum = max(1.0, float(maximum))
+        self._value   = max(0.0, min(float(value), self._maximum))
+        self._orient  = orient.lower()
+        self._mode    = mode.lower()
+        self.variable = variable
+        self.barcolor = barcolor
+        self.troughcolor = bg
+        self._bd = bd
+
+        # 边框
+        self._bt = tk.Frame(self, bg=BDCOLOR, height=bd)
+        self._bb = tk.Frame(self, bg=BDCOLOR, height=bd)
+        self._bl = tk.Frame(self, bg=BDCOLOR, width=bd)
+        self._br = tk.Frame(self, bg=BDCOLOR, width=bd)
+        self._bt.pack(fill='x', side='top')
+        self._bb.pack(fill='x', side='bottom')
+        self._bl.pack(fill='y', side='left')
+        self._br.pack(fill='y', side='right')
+
+        # 槽 + 画布
+        self._trough = tk.Frame(self, bg=bg, bd=0, highlightthickness=0)
+        self._trough.pack(fill='both', expand=True)
+        self._canvas = tk.Canvas(self._trough, bg=bg, highlightthickness=0, bd=0)
+        self._canvas.pack(fill='both', expand=True)
+
+        # 动画状态
+        self._shine_pos = -0.45
+        self._ind_pos   = 0.0
+        self._ind_dir   = 1
+        self._animating = False
+        self._shine_on  = False
+        self._after_id  = None
+        self._shine_id  = None
+
+        if variable is not None:
+            variable.trace_add('write', self._on_var)
+            try:
+                self._value = float(variable.get())
+            except Exception:
+                pass
+
+        if self._orient == 'horizontal':
+            self.configure(width=length, height=30)
+        else:
+            self.configure(width=30, height=length)
+
+        self.bind('<Configure>', lambda e: self._redraw())
+        self._canvas.bind('<Configure>', lambda e: self._redraw())
+        self.after(30, self._check_shine)
+
+    # -------------------- 公共接口 --------------------
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, v):
+        self._value = max(0.0, min(float(v), self._maximum))
+        if self.variable is not None:
+            try:
+                self.variable.set(self._value)
+            except Exception:
+                pass
+        self._redraw()
+
+    @property
+    def maximum(self):
+        return self._maximum
+
+    @maximum.setter
+    def maximum(self, v):
+        self._maximum = max(1.0, float(v))
+        self._value = min(self._value, self._maximum)
+        self._redraw()
+
+    @property
+    def mode(self):
+        return self._mode
+
+    @mode.setter
+    def mode(self, v):
+        self._mode = str(v).lower()
+        self._check_shine()
+        self._redraw()
+
+    @property
+    def orient(self):
+        return self._orient
+
+    def start(self, interval=16):
+        if self._mode != 'indeterminate':
+            return
+        self._animating = True
+        self._tick_ind(interval)
+
+    def stop(self):
+        self._animating = False
+        if self._after_id:
+            self.after_cancel(self._after_id)
+            self._after_id = None
+
+    def step(self, amount=1.0):
+        if self._mode == 'determinate':
+            self.value = self.value + amount
+
+    def configure(self, cnf=None, **kw):
+        if 'value' in kw:    self.value = kw.pop('value')
+        if 'maximum' in kw:  self.maximum = kw.pop('maximum')
+        if 'mode' in kw:     self.mode = kw.pop('mode')
+        if 'barcolor' in kw:
+            self.barcolor = kw.pop('barcolor')
+            self._redraw()
+        if kw or cnf:
+            return super().configure(cnf, **kw)
+    config = configure
+
+    # -------------------- 内部 --------------------
+    def _on_var(self, *a):
+        try:
+            self._value = float(self.variable.get())
+            self._redraw()
+        except Exception:
+            pass
+
+    def _rgb(self, color):
+        r, g, b = self.winfo_rgb(color)
+        return r >> 8, g >> 8, b >> 8
+
+    def _to_hex(self, r, g, b):
+        return f'#{max(0, min(255, int(r))):02x}{max(0, min(255, int(g))):02x}{max(0, min(255, int(b))):02x}'
+
+    def _check_shine(self):
+        if self._mode == 'determinate' and not self._shine_on:
+            self._shine_on = True
+            self._tick_shine()
+        elif self._mode != 'determinate':
+            self._shine_on = False
+            if self._shine_id:
+                self.after_cancel(self._shine_id)
+                self._shine_id = None
+
+    def _tick_shine(self):
+        if not self._shine_on:
+            return
+        self._shine_pos += 0.020
+        if self._shine_pos > 1.45:
+            self._shine_pos = -0.45
+        self._redraw()
+        self._shine_id = self.after(30, self._tick_shine)
+
+    def _tick_ind(self, interval):
+        if not self._animating:
+            return
+        self._ind_pos += 0.03 * self._ind_dir
+        if self._ind_pos >= 1.0:
+            self._ind_pos = 1.0
+            self._ind_dir = -1
+        elif self._ind_pos <= 0.0:
+            self._ind_pos = 0.0
+            self._ind_dir = 1
+        self._redraw()
+        self._after_id = self.after(interval, lambda: self._tick_ind(interval))
+
+    def _redraw(self, event=None):
+        c = self._canvas
+        c.delete('all')
+        w, h = c.winfo_width(), c.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+
+        if self._mode == 'determinate':
+            ratio = self._value / self._maximum
+            if self._orient == 'horizontal':
+                bw = max(0, int(w * ratio))
+                if bw > 0:
+                    self._draw_shine(c, 0, 0, bw, h, True)
+            else:
+                bh = max(0, int(h * ratio))
+                if bh > 0:
+                    self._draw_shine(c, 0, h - bh, w, bh, False)
+        else:
+            length = max(28, int((w if self._orient == 'horizontal' else h) * 0.27))
+            if self._orient == 'horizontal':
+                x = int(self._ind_pos * (w - length))
+                c.create_rectangle(x, 0, x + length, h, fill=self.barcolor, outline='')
+            else:
+                y = int(self._ind_pos * (h - length))
+                c.create_rectangle(0, y, w, y + length, fill=self.barcolor, outline='')
+
+    # ==================================================================
+    # 高光：边缘强度强制降到接近 0，实现无缝衔接
+    # ==================================================================
+    def _draw_shine(self, c, x, y, bw, bh, horizontal=True):
+        # 1. 纯色主体
+        c.create_rectangle(x, y, x + bw, y + bh, fill=self.barcolor, outline='', tags='bar')
+
+        # 2. 运动柔光（用 AlphaBlend 与绿色融合，降低亮度）
+        shine_w = max(28, int(bw * 0.62))
+        center = x + int(self._shine_pos * (bw + shine_w * 0.5)) - shine_w // 2
+
+        # 高光基础色（白色），通过 AlphaBlend 与 barcolor 融合
+        # foreground_alpha 越小，高光越贴近绿色、越不刺眼
+        # 推荐范围：0.25 ~ 0.45
+        base_highlight = AlphaBlend('#FFFFFF', self.barcolor, foreground_alpha=0.6)
+
+        left  = max(x, center - shine_w // 2)
+        right = min(x + bw, center + shine_w // 2)
+        half  = shine_w / 2.0
+
+        for px in range(left, right):
+            dist = (px - center) / half
+
+            # 高斯 + 边缘 smoothstep，保证两侧完全融入
+            raw = math.exp(-0.5 * (dist / 0.55) ** 2)
+            edge = max(0.0, 1.0 - abs(dist))
+            edge_factor = edge * edge * (3.0 - 2.0 * edge)
+            intensity = raw * edge_factor
+
+            if intensity < 0.02:
+                continue
+
+            # 再用一次 AlphaBlend，按强度把高光叠到绿色上
+            # intensity 越大越亮，但整体已经被 0.35 压过，不会过爆
+            col = AlphaBlend(base_highlight, self.barcolor, foreground_alpha=intensity)
+            c.create_line(px, y, px, y + bh, fill=col, width=1, tags='shine')
+    def destroy(self):
+        self.stop()
+        self._shine_on = False
+        if self._shine_id:
+            self.after_cancel(self._shine_id)
+        super().destroy()
 
 class RainbowLoding(tk.Frame):
     def __init__(self, master, **kw):
@@ -2860,6 +3359,345 @@ class RainbowLoding(tk.Frame):
         if self.move_pixel>=344:
             self.move_pixel=0       
         self.after(10,self.move_labels)
+
+
+class DScrollbar(tk.Frame):
+    """
+    纯 tk + DButton 实现的自定义滚动条
+    支持垂直/水平，接口与 tk.Scrollbar 兼容，可无缝切换
+    """
+    def __init__(self, master=None, orient='vertical', command=None,
+                 bg=None, troughcolor=None, activebackground=None,
+                 width=16, **kw):          # 默认宽度改为 16，更易点击
+        # 主题颜色
+        self._bg = bg or WINDOWBG
+        self._trough = troughcolor or WIDGETBG
+        self._thumb_normal = TEXTBG if IsDarkMode() else BDCOLOR
+        self._thumb_hover  = AlphaBlend(HIGHLIGHT, self._thumb_normal, 0.35) if IsDarkMode() else HIGHLIGHT
+        self._thumb_active = HIGHLIGHT
+        self._arrow_bg     = WIDGETBG
+        self._arrow_fg     = TEXTFG
+
+        
+
+        # 先把自定义参数弹出来，避免传给 Frame
+        for key in ('command', 'orient', 'bg', 'troughcolor',
+                    'activebackground', 'width'):
+            kw.pop(key, None)
+
+        super().__init__(master, bg=self._bg, **kw)
+
+        self.orient = orient.lower()
+        self.command = command
+        self._width = max(12, int(width))          # 最小厚度保护
+        self._arrowsize = self._width              # 强制正方形
+        self._first = 0.0
+        self._last  = 1.0
+        self._dragging = False
+        self._drag_start = 0
+        self._drag_first = 0.0
+        self._hover = False
+
+        # 固定尺寸
+        if self.orient == 'vertical':
+            super().configure(width=self._width)
+        else:
+            super().configure(height=self._width)
+        self.pack_propagate(False)
+        self.grid_propagate(False)
+
+        # ---------- 箭头按钮（强制正方形） ----------
+        if self.orient == 'vertical':
+            # 上箭头
+            self.up_frame = tk.Frame(self, width=self._width, height=self._arrowsize,
+                                     bg=self._arrow_bg, bd=0, highlightthickness=0)
+            self.up_frame.pack(side='top', fill='x')
+            self.up_frame.pack_propagate(False)
+
+            self.up_btn = DAlphaButton(self.up_frame, text='∧', command=self._scroll_up,
+                                  bg=self._arrow_bg, fg=self._arrow_fg,
+                                  font=('', 8), takefocus=False)
+            self.up_btn.pack(fill='both', expand=True)
+
+            # 下箭头
+            self.down_frame = tk.Frame(self, width=self._width, height=self._arrowsize,
+                                       bg=self._arrow_bg, bd=0, highlightthickness=0)
+            self.down_frame.pack(side='bottom', fill='x')
+            self.down_frame.pack_propagate(False)
+
+            self.down_btn = DAlphaButton(self.down_frame, text='∨', command=self._scroll_down,
+                                    bg=self._arrow_bg, fg=self._arrow_fg,
+                                    font=('', 8), takefocus=False)
+            self.down_btn.pack(fill='both', expand=True)
+
+        else:
+            # 左箭头
+            self.up_frame = tk.Frame(self, width=self._arrowsize, height=self._width,
+                                     bg=self._arrow_bg, bd=0, highlightthickness=0)
+            self.up_frame.pack(side='left', fill='y')
+            self.up_frame.pack_propagate(False)
+
+            self.up_btn = DAlphaButton(self.up_frame, text='＜', command=self._scroll_up,
+                                  bg=self._arrow_bg, fg=self._arrow_fg,
+                                  font=('', 8), takefocus=False)
+            self.up_btn.pack(fill='both', expand=True)
+
+            # 右箭头
+            self.down_frame = tk.Frame(self, width=self._arrowsize, height=self._width,
+                                       bg=self._arrow_bg, bd=0, highlightthickness=0)
+            self.down_frame.pack(side='right', fill='y')
+            self.down_frame.pack_propagate(False)
+
+            self.down_btn = DAlphaButton(self.down_frame, text='＞', command=self._scroll_down,
+                                    bg=self._arrow_bg, fg=self._arrow_fg,
+                                    font=('', 8), takefocus=False)
+            self.down_btn.pack(fill='both', expand=True)
+
+        # ---------- 轨道 + 滑块（可延伸部分最小 20） ----------
+        self.trough = tk.Frame(self, bg=self._trough, bd=0, highlightthickness=0)
+        if self.orient == 'vertical':
+            self.trough.pack(side='top', fill='both', expand=True)
+            # 保证轨道区域至少 20 像素高
+            self.trough.configure(height=20)
+            self.trough.pack_propagate(False)   # 防止被压缩得太狠
+        else:
+            self.trough.pack(side='left', fill='both', expand=True)
+            self.trough.configure(width=20)
+            self.trough.pack_propagate(False)
+
+        self.canvas = tk.Canvas(self.trough, bg=self._trough,
+                                highlightthickness=0, bd=0)
+        self.canvas.pack(fill='both', expand=True)
+
+        self.thumb = self.canvas.create_rectangle(0, 0, 1, 1,
+                                                  fill=self._thumb_normal,
+                                                  outline='', tags='thumb',
+                                                  state='hidden')
+
+        # 事件绑定
+        self.canvas.bind('<Configure>', self._on_configure)
+        self.canvas.bind('<Button-1>', self._on_press)
+        self.canvas.bind('<B1-Motion>', self._on_drag)
+        self.canvas.bind('<ButtonRelease-1>', self._on_release)
+        self.canvas.bind('<Enter>', self._on_enter)
+        self.canvas.bind('<Leave>', self._on_leave)
+        self.canvas.bind('<MouseWheel>', self._on_mousewheel)
+        self.canvas.bind('<Button-4>', lambda e: self._scroll_units(-1))
+        self.canvas.bind('<Button-5>', lambda e: self._scroll_units(1))
+
+        self.canvas.tag_bind('thumb', '<Enter>', self._on_thumb_enter)
+        self.canvas.tag_bind('thumb', '<Leave>', self._on_thumb_leave)
+
+        self._update_thumb()
+
+    # ------------------------------------------------------------------
+    # 公共接口
+    # ------------------------------------------------------------------
+    def set(self, first, last):
+        try:
+            self._first = float(first)
+            self._last  = float(last)
+        except Exception:
+            self._first, self._last = 0.0, 1.0
+        self._update_thumb()
+
+    def get(self):
+        return self._first, self._last
+
+    def configure(self, cnf=None, **kw):
+        if isinstance(cnf, dict):
+            kw = {**cnf, **kw}
+            cnf = None
+
+        if 'command' in kw:
+            self.command = kw.pop('command')
+        if 'orient' in kw:
+            kw.pop('orient')
+        if 'bg' in kw:
+            self._bg = kw.pop('bg')
+            super().configure(bg=self._bg)
+        if 'troughcolor' in kw:
+            self._trough = kw.pop('troughcolor')
+            self.trough.configure(bg=self._trough)
+            self.canvas.configure(bg=self._trough)
+        if 'activebackground' in kw:
+            self._thumb_active = kw.pop('activebackground')
+        if 'width' in kw:
+            self._width = max(12, int(kw.pop('width')))
+            self._arrowsize = self._width
+            if self.orient == 'vertical':
+                super().configure(width=self._width)
+            else:
+                super().configure(height=self._width)
+
+        if kw:
+            return super().configure(**kw)
+        return None
+
+    config = configure
+
+    def __setitem__(self, key, value):
+        if key == 'command':
+            self.command = value
+        elif key == 'orient':
+            pass
+        elif key == 'bg':
+            self._bg = value
+            super().configure(bg=value)
+        elif key == 'troughcolor':
+            self._trough = value
+            self.trough.configure(bg=value)
+            self.canvas.configure(bg=value)
+        elif key == 'activebackground':
+            self._thumb_active = value
+        elif key == 'width':
+            self._width = max(12, int(value))
+            self._arrowsize = self._width
+            if self.orient == 'vertical':
+                super().configure(width=self._width)
+            else:
+                super().configure(height=self._width)
+        else:
+            super().__setitem__(key, value)
+
+    def __getitem__(self, key):
+        if key == 'command':
+            return self.command
+        if key == 'orient':
+            return self.orient
+        if key == 'bg':
+            return self._bg
+        if key == 'troughcolor':
+            return self._trough
+        if key == 'width':
+            return self._width
+        return super().__getitem__(key)
+
+    # ------------------------------------------------------------------
+    # 内部实现
+    # ------------------------------------------------------------------
+    def _on_configure(self, event=None):
+        self._update_thumb()
+
+    def _update_thumb(self):
+        if not self.winfo_exists():
+            return
+
+        # 内容不足以滚动时隐藏滑块
+        if self._last - self._first >= 0.999:
+            self.canvas.itemconfigure(self.thumb, state='hidden')
+            return
+
+        self.canvas.itemconfigure(self.thumb, state='normal')
+
+        w = self.canvas.winfo_width()
+        h = self.canvas.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+
+        if self.orient == 'vertical':
+            total = h
+            size = max(20, int((self._last - self._first) * total))  # 滑块最小 20
+            pos  = int(self._first * total)
+            if pos + size > total:
+                pos = max(0, total - size)
+            self.canvas.coords(self.thumb, 1, pos, w - 1, pos + size)
+        else:
+            total = w
+            size = max(20, int((self._last - self._first) * total))
+            pos  = int(self._first * total)
+            if pos + size > total:
+                pos = max(0, total - size)
+            self.canvas.coords(self.thumb, pos, 1, pos + size, h - 1)
+
+    def _fraction(self, event):
+        if self.orient == 'vertical':
+            total = self.canvas.winfo_height()
+            if total <= 0:
+                return 0.0
+            return max(0.0, min(1.0, event.y / total))
+        else:
+            total = self.canvas.winfo_width()
+            if total <= 0:
+                return 0.0
+            return max(0.0, min(1.0, event.x / total))
+
+    def _on_press(self, event):
+        items = self.canvas.find_overlapping(event.x - 1, event.y - 1, event.x + 1, event.y + 1)
+        if self.thumb in items and self.canvas.itemcget(self.thumb, 'state') != 'hidden':
+            self._dragging = True
+            self._drag_start = event.y if self.orient == 'vertical' else event.x
+            self._drag_first = self._first
+            self.canvas.itemconfigure(self.thumb, fill=self._thumb_active)
+        else:
+            frac = self._fraction(event)
+            span = self._last - self._first
+            if span >= 0.999:
+                return
+            new_first = max(0.0, min(1.0 - span, frac - span / 2))
+            self._move_to(new_first)
+
+    def _on_drag(self, event):
+        if not self._dragging:
+            return
+        if self.orient == 'vertical':
+            total = max(1, self.canvas.winfo_height())
+            delta = (event.y - self._drag_start) / total
+        else:
+            total = max(1, self.canvas.winfo_width())
+            delta = (event.x - self._drag_start) / total
+
+        span = self._last - self._first
+        new_first = max(0.0, min(1.0 - span, self._drag_first + delta))
+        self._move_to(new_first)
+
+    def _on_release(self, event):
+        self._dragging = False
+        if self.canvas.itemcget(self.thumb, 'state') != 'hidden':
+            fill = self._thumb_hover if self._hover else self._thumb_normal
+            self.canvas.itemconfigure(self.thumb, fill=fill)
+
+    def _move_to(self, first):
+        span = self._last - self._first
+        self._first = first
+        self._last  = first + span
+        self._update_thumb()
+        if self.command:
+            self.command('moveto', self._first)
+
+    def _scroll_units(self, direction):
+        if self.command:
+            self.command('scroll', direction, 'units')
+
+    def _scroll_up(self):
+        self._scroll_units(-1)
+
+    def _scroll_down(self):
+        self._scroll_units(1)
+
+    def _on_mousewheel(self, event):
+        delta = -1 if event.delta > 0 else 1
+        self._scroll_units(delta)
+
+    def _on_enter(self, event):
+        self._hover = True
+        if not self._dragging and self.canvas.itemcget(self.thumb, 'state') != 'hidden':
+            self.canvas.itemconfigure(self.thumb, fill=self._thumb_hover)
+
+    def _on_leave(self, event):
+        self._hover = False
+        if not self._dragging and self.canvas.itemcget(self.thumb, 'state') != 'hidden':
+            self.canvas.itemconfigure(self.thumb, fill=self._thumb_normal)
+
+    def _on_thumb_enter(self, event):
+        self._hover = True
+        if not self._dragging:
+            self.canvas.itemconfigure(self.thumb, fill=self._thumb_hover)
+
+    def _on_thumb_leave(self, event):
+        if not self._dragging:
+            self._hover = False
+            self.canvas.itemconfigure(self.thumb, fill=self._thumb_normal)
 
 
 
@@ -3326,11 +4164,10 @@ def PasswordBox(title='',text='',parent=None,defaultuser='',defaultfocus=1,defau
         entry_username.focus()
     else:
         entry_password.focus()
-    s=ttk.Style()
-    s.configure('c.TCheckbutton',anchor='w',background=WINDOWBG,foreground=TEXTFG)
+
     save_cb=tk.BooleanVar()
     save_cb.set(False)
-    savepas=ttk.Checkbutton(password_box_window,text='记住我的密码(R)',underline=7,style='c.TCheckbutton',variable=save_cb,onvalue=True,offvalue=False)
+    savepas=DCheckbutton(password_box_window,text='记住我的密码(R)',underline=7,variable=save_cb,onvalue=True,offvalue=False)
     savepas.place(x=170,y=240,width=250,height=30)
     def savepas_focus_(nothing):
         savepas.focus()
@@ -4617,6 +5454,11 @@ class ToastNotification:
         self.stretch_deactivate_animation_running = False  
         self.stretch_deactivate_initial_width = 0  
         self.stretch_deactivate_initial_height = 0 
+    def _auto_close_timer(self):
+        """如果 stay_time > 0，则自动关闭通知窗口"""
+        if self.stay_time > 0:
+            self.ToastNotification_window.after(int(self.stay_time * 1000), self.close_toast)
+
     def layout_window(self,):
         self.ToastNotification_window=tk.Tk()if self.parent==None else tk.Toplevel(self.parent)
         self.ToastNotification_window.overrideredirect(1)
@@ -4639,7 +5481,7 @@ class ToastNotification:
         if self.icon not in [None,'none','']:
             Label_small_icon=tk.Label(Frame_title_bar,bg=TOASTBG,anchor='center')
             Label_small_icon.place(x=0,y=0,width=30,height=30)
-            SetImageTk(Label_small_icon,f"{libresource}{self.icon}", img_size=(24, 24))
+            SetImageTk(Label_small_icon,f"{libresource}{self.icon}.ico", img_size=(24, 24))
 
         Label_title=tk.Label(Frame_title_bar,bg=TOASTBG,fg=TEXTFG,anchor='w',text=self.title)
         Label_title.place(x=title_bar_icon_offset_x,y=0,width=420-title_bar_icon_offset_x-title_bar_more_option_offset_x,height=30)
@@ -5083,6 +5925,8 @@ class ToastNotification:
         self.convert_place_to_relative(self.Frame_main,462,self.all_height + 2,)
         self.show_window_animation()
         ctypes.windll.user32.SetWindowLongW(ctypes.windll.user32.GetWindowLongW(self.ToastNotification_window.winfo_id(), -8),win32con.GWL_EXSTYLE, win32con.WS_EX_NOACTIVATE | win32con.WS_EX_TOPMOST)
+
+        self._auto_close_timer()
         self.ToastNotification_window.wait_window()
 
     def show_window_animation(self):
@@ -5605,7 +6449,7 @@ class MessageBoxModernError:
 
 
 
-def MessageBoxModern(parent=None, title_icon='icon', title='',text_blod='', text='', icon='none',text_true='确定', text_false='取消', button_mode=1, default_focus=1):
+def MessageBoxModern(parent=None, title_icon='icon', title='',text_blod='', text='', icon='none',text_true='确定', text_false='取消', button_mode=1, default_focus=1,transient_parent=True):
     """
     显示一个现代化的消息框
     
@@ -5677,7 +6521,7 @@ def MessageBoxModern(parent=None, title_icon='icon', title='',text_blod='', text
     message_window = tk.Toplevel(parent) if parent != None else tk.Tk()
     if parent:
         parent.attributes('-disabled', 'true')
-        message_window.wm_transient(parent)
+        if transient_parent:message_window.wm_transient(parent)
     message_window.resizable(0, 0)
     message_window.config(bd=0, bg=WINDOWBG, highlightthickness=0)
     message_window.protocol("WM_DELETE_WINDOW", _close_window)
@@ -5884,13 +6728,14 @@ def EntryBox(parent=None,title_icon='icon',title='',text_blod='',text='',entrys=
 
 
     ok_button['default']='active'
-    ok_button.focus()
+
 
     screenwidth=GetWorkArea()[2]
     screenheight=GetWorkArea()[3]
     entry_window.geometry(f'430x{all_height+20}+{int((screenwidth-450)/2)}+{int((screenheight-all_height)/2)}')
 
-    entry_window.focus_set()
+    entry_widgets[0].focus()
+    TkEntryMoveToRightSelectAll(entry_widgets[0])
                
     beep_map={'question':win32con.MB_ICONQUESTION,
               'error':win32con.MB_ICONERROR,
@@ -5902,7 +6747,8 @@ def EntryBox(parent=None,title_icon='icon',title='',text_blod='',text='',entrys=
 
     SetDarkTitleBar(entry_window)
     entry_window.wm_iconbitmap(f"{libresource}{title_icon}.ico")
-    win32api.MessageBeep(beep_map.get(icon,0))
+    if  beep_map.get(icon,0)!=0:
+        win32api.MessageBeep(beep_map.get(icon,0))
 
     entry_window.wait_window()
 
@@ -6083,654 +6929,6 @@ class ImagePreview(tk.Frame):
 
 
 
-class oldDScrollbar(tk.Frame):
-    """
-    纯 tk + DButton 实现的自定义滚动条
-    支持垂直/水平，接口与 tk.Scrollbar 兼容，可无缝切换
-    """
-    def __init__(self, master=None, orient='vertical', command=None,
-                 bg=None, troughcolor=None, activebackground=None,
-                 width=12, arrowsize=None, **kw):
-        # 主题颜色
-        self._bg = bg or WINDOWBG
-        self._trough = troughcolor or WIDGETBG
-        self._thumb_normal = TEXTBG if IsDarkMode() else BDCOLOR
-        self._thumb_hover  = AlphaBlend(HIGHLIGHT, self._thumb_normal, 0.35) if IsDarkMode() else HIGHLIGHT
-        self._thumb_active = HIGHLIGHT
-        self._arrow_bg     = WIDGETBG
-        self._arrow_fg     = SECONDARYTEXTFG
-
-        # 先把自定义参数弹出来，避免传给 Frame
-        for key in ('command', 'orient', 'bg', 'troughcolor',
-                    'activebackground', 'width', 'arrowsize'):
-            kw.pop(key, None)
-
-        super().__init__(master, bg=self._bg, **kw)
-
-        self.orient = orient.lower()
-        self.command = command
-        self._width = width
-        self._arrowsize = arrowsize if arrowsize is not None else width
-        self._first = 0.0
-        self._last  = 1.0
-        self._dragging = False
-        self._drag_start = 0
-        self._drag_first = 0.0
-        self._hover = False
-
-        # 固定尺寸
-        if self.orient == 'vertical':
-            super().configure(width=self._width)
-        else:
-            super().configure(height=self._width)
-        self.pack_propagate(False)
-        self.grid_propagate(False)
-
-        # ---------- 箭头按钮（始终显示） ----------
-        if self.orient == 'vertical':
-            self.up_btn = DButton(self, text='▲', command=self._scroll_up,
-                                  bg=self._arrow_bg, fg=self._arrow_fg,
-                                  width=self._width, height=self._arrowsize,
-                                  takefocus=False)
-            self.down_btn = DButton(self, text='▼', command=self._scroll_down,
-                                    bg=self._arrow_bg, fg=self._arrow_fg,
-                                    width=self._width, height=self._arrowsize,
-                                    takefocus=False)
-            self.up_btn.pack(side='top', fill='x')
-            self.down_btn.pack(side='bottom', fill='x')
-        else:
-            self.up_btn = DButton(self, text='◀', command=self._scroll_up,
-                                  bg=self._arrow_bg, fg=self._arrow_fg,
-                                  width=self._arrowsize, height=self._width,
-                                  takefocus=False)
-            self.down_btn = DButton(self, text='▶', command=self._scroll_down,
-                                    bg=self._arrow_bg, fg=self._arrow_fg,
-                                    width=self._arrowsize, height=self._width,
-                                    takefocus=False)
-            self.up_btn.pack(side='left', fill='y')
-            self.down_btn.pack(side='right', fill='y')
-
-        # ---------- 轨道 + 滑块 ----------
-        self.trough = tk.Frame(self, bg=self._trough, bd=0, highlightthickness=0)
-        if self.orient == 'vertical':
-            self.trough.pack(side='top', fill='both', expand=True)
-        else:
-            self.trough.pack(side='left', fill='both', expand=True)
-
-        self.canvas = tk.Canvas(self.trough, bg=self._trough,
-                                highlightthickness=0, bd=0)
-        self.canvas.pack(fill='both', expand=True)
-
-        self.thumb = self.canvas.create_rectangle(0, 0, 1, 1,
-                                                  fill=self._thumb_normal,
-                                                  outline='', tags='thumb',
-                                                  state='hidden')  # 默认先隐藏
-
-        # 事件绑定
-        self.canvas.bind('<Configure>', self._on_configure)
-        self.canvas.bind('<Button-1>', self._on_press)
-        self.canvas.bind('<B1-Motion>', self._on_drag)
-        self.canvas.bind('<ButtonRelease-1>', self._on_release)
-        self.canvas.bind('<Enter>', self._on_enter)
-        self.canvas.bind('<Leave>', self._on_leave)
-        self.canvas.bind('<MouseWheel>', self._on_mousewheel)
-        self.canvas.bind('<Button-4>', lambda e: self._scroll_units(-1))
-        self.canvas.bind('<Button-5>', lambda e: self._scroll_units(1))
-
-        self.canvas.tag_bind('thumb', '<Enter>', self._on_thumb_enter)
-        self.canvas.tag_bind('thumb', '<Leave>', self._on_thumb_leave)
-
-        self._update_thumb()
-
-    # ------------------------------------------------------------------
-    # 公共接口
-    # ------------------------------------------------------------------
-    def set(self, first, last):
-        try:
-            self._first = float(first)
-            self._last  = float(last)
-        except Exception:
-            self._first, self._last = 0.0, 1.0
-        self._update_thumb()
-
-    def get(self):
-        return self._first, self._last
-
-    def configure(self, cnf=None, **kw):
-        if isinstance(cnf, dict):
-            kw = {**cnf, **kw}
-            cnf = None
-
-        if 'command' in kw:
-            self.command = kw.pop('command')
-        if 'orient' in kw:
-            kw.pop('orient')
-        if 'bg' in kw:
-            self._bg = kw.pop('bg')
-            super().configure(bg=self._bg)
-        if 'troughcolor' in kw:
-            self._trough = kw.pop('troughcolor')
-            self.trough.configure(bg=self._trough)
-            self.canvas.configure(bg=self._trough)
-        if 'activebackground' in kw:
-            self._thumb_active = kw.pop('activebackground')
-        if 'width' in kw:
-            self._width = int(kw.pop('width'))
-            if self.orient == 'vertical':
-                super().configure(width=self._width)
-            else:
-                super().configure(height=self._width)
-
-        if kw:
-            return super().configure(**kw)
-        return None
-
-    config = configure
-
-    def __setitem__(self, key, value):
-        if key == 'command':
-            self.command = value
-        elif key == 'orient':
-            pass
-        elif key == 'bg':
-            self._bg = value
-            super().configure(bg=value)
-        elif key == 'troughcolor':
-            self._trough = value
-            self.trough.configure(bg=value)
-            self.canvas.configure(bg=value)
-        elif key == 'activebackground':
-            self._thumb_active = value
-        elif key == 'width':
-            self._width = int(value)
-            if self.orient == 'vertical':
-                super().configure(width=self._width)
-            else:
-                super().configure(height=self._width)
-        else:
-            super().__setitem__(key, value)
-
-    def __getitem__(self, key):
-        if key == 'command':
-            return self.command
-        if key == 'orient':
-            return self.orient
-        if key == 'bg':
-            return self._bg
-        if key == 'troughcolor':
-            return self._trough
-        if key == 'width':
-            return self._width
-        return super().__getitem__(key)
-
-    # ------------------------------------------------------------------
-    # 内部实现
-    # ------------------------------------------------------------------
-    def _on_configure(self, event=None):
-        self._update_thumb()
-
-    def _update_thumb(self):
-        if not self.winfo_exists():
-            return
-
-        # 内容不足以滚动时隐藏滑块
-        if self._last - self._first >= 0.999:
-            self.canvas.itemconfigure(self.thumb, state='hidden')
-            return
-
-        self.canvas.itemconfigure(self.thumb, state='normal')
-
-        w = self.canvas.winfo_width()
-        h = self.canvas.winfo_height()
-        if w <= 1 or h <= 1:
-            return
-
-        if self.orient == 'vertical':
-            total = h
-            size = max(20, int((self._last - self._first) * total))
-            pos  = int(self._first * total)
-            if pos + size > total:
-                pos = max(0, total - size)
-            self.canvas.coords(self.thumb, 1, pos, w - 1, pos + size)
-        else:
-            total = w
-            size = max(20, int((self._last - self._first) * total))
-            pos  = int(self._first * total)
-            if pos + size > total:
-                pos = max(0, total - size)
-            self.canvas.coords(self.thumb, pos, 1, pos + size, h - 1)
-
-    def _fraction(self, event):
-        if self.orient == 'vertical':
-            total = self.canvas.winfo_height()
-            if total <= 0:
-                return 0.0
-            return max(0.0, min(1.0, event.y / total))
-        else:
-            total = self.canvas.winfo_width()
-            if total <= 0:
-                return 0.0
-            return max(0.0, min(1.0, event.x / total))
-
-    def _on_press(self, event):
-        # 滑块被隐藏时点击轨道也跳转
-        items = self.canvas.find_overlapping(event.x - 1, event.y - 1, event.x + 1, event.y + 1)
-        if self.thumb in items and self.canvas.itemcget(self.thumb, 'state') != 'hidden':
-            self._dragging = True
-            self._drag_start = event.y if self.orient == 'vertical' else event.x
-            self._drag_first = self._first
-            self.canvas.itemconfigure(self.thumb, fill=self._thumb_active)
-        else:
-            # 点击轨道跳转
-            frac = self._fraction(event)
-            span = self._last - self._first
-            if span >= 0.999:
-                return
-            new_first = max(0.0, min(1.0 - span, frac - span / 2))
-            self._move_to(new_first)
-
-    def _on_drag(self, event):
-        if not self._dragging:
-            return
-        if self.orient == 'vertical':
-            total = max(1, self.canvas.winfo_height())
-            delta = (event.y - self._drag_start) / total
-        else:
-            total = max(1, self.canvas.winfo_width())
-            delta = (event.x - self._drag_start) / total
-
-        span = self._last - self._first
-        new_first = max(0.0, min(1.0 - span, self._drag_first + delta))
-        self._move_to(new_first)
-
-    def _on_release(self, event):
-        self._dragging = False
-        if self.canvas.itemcget(self.thumb, 'state') != 'hidden':
-            fill = self._thumb_hover if self._hover else self._thumb_normal
-            self.canvas.itemconfigure(self.thumb, fill=fill)
-
-    def _move_to(self, first):
-        span = self._last - self._first
-        self._first = first
-        self._last  = first + span
-        self._update_thumb()
-        if self.command:
-            self.command('moveto', self._first)
-
-    def _scroll_units(self, direction):
-        if self.command:
-            self.command('scroll', direction, 'units')
-
-    def _scroll_up(self):
-        self._scroll_units(-1)
-
-    def _scroll_down(self):
-        self._scroll_units(1)
-
-    def _on_mousewheel(self, event):
-        delta = -1 if event.delta > 0 else 1
-        self._scroll_units(delta)
-
-    def _on_enter(self, event):
-        self._hover = True
-        if not self._dragging and self.canvas.itemcget(self.thumb, 'state') != 'hidden':
-            self.canvas.itemconfigure(self.thumb, fill=self._thumb_hover)
-
-    def _on_leave(self, event):
-        self._hover = False
-        if not self._dragging and self.canvas.itemcget(self.thumb, 'state') != 'hidden':
-            self.canvas.itemconfigure(self.thumb, fill=self._thumb_normal)
-
-    def _on_thumb_enter(self, event):
-        self._hover = True
-        if not self._dragging:
-            self.canvas.itemconfigure(self.thumb, fill=self._thumb_hover)
-
-    def _on_thumb_leave(self, event):
-        if not self._dragging:
-            self._hover = False
-            self.canvas.itemconfigure(self.thumb, fill=self._thumb_normal)
-
-
-
-
-class DScrollbar(tk.Frame):
-    """
-    纯 tk + DButton 实现的自定义滚动条
-    支持垂直/水平，接口与 tk.Scrollbar 兼容，可无缝切换
-    """
-    def __init__(self, master=None, orient='vertical', command=None,
-                 bg=None, troughcolor=None, activebackground=None,
-                 width=16, **kw):          # 默认宽度改为 16，更易点击
-        # 主题颜色
-        self._bg = bg or WINDOWBG
-        self._trough = troughcolor or WIDGETBG
-        self._thumb_normal = TEXTBG if IsDarkMode() else BDCOLOR
-        self._thumb_hover  = AlphaBlend(HIGHLIGHT, self._thumb_normal, 0.35) if IsDarkMode() else HIGHLIGHT
-        self._thumb_active = HIGHLIGHT
-        self._arrow_bg     = WIDGETBG
-        self._arrow_fg     = TEXTFG
-
-        
-
-        # 先把自定义参数弹出来，避免传给 Frame
-        for key in ('command', 'orient', 'bg', 'troughcolor',
-                    'activebackground', 'width'):
-            kw.pop(key, None)
-
-        super().__init__(master, bg=self._bg, **kw)
-
-        self.orient = orient.lower()
-        self.command = command
-        self._width = max(12, int(width))          # 最小厚度保护
-        self._arrowsize = self._width              # 强制正方形
-        self._first = 0.0
-        self._last  = 1.0
-        self._dragging = False
-        self._drag_start = 0
-        self._drag_first = 0.0
-        self._hover = False
-
-        # 固定尺寸
-        if self.orient == 'vertical':
-            super().configure(width=self._width)
-        else:
-            super().configure(height=self._width)
-        self.pack_propagate(False)
-        self.grid_propagate(False)
-
-        # ---------- 箭头按钮（强制正方形） ----------
-        if self.orient == 'vertical':
-            # 上箭头
-            self.up_frame = tk.Frame(self, width=self._width, height=self._arrowsize,
-                                     bg=self._arrow_bg, bd=0, highlightthickness=0)
-            self.up_frame.pack(side='top', fill='x')
-            self.up_frame.pack_propagate(False)
-
-            self.up_btn = DAlphaButton(self.up_frame, text='∧', command=self._scroll_up,
-                                  bg=self._arrow_bg, fg=self._arrow_fg,
-                                  font=('', 8), takefocus=False)
-            self.up_btn.pack(fill='both', expand=True)
-
-            # 下箭头
-            self.down_frame = tk.Frame(self, width=self._width, height=self._arrowsize,
-                                       bg=self._arrow_bg, bd=0, highlightthickness=0)
-            self.down_frame.pack(side='bottom', fill='x')
-            self.down_frame.pack_propagate(False)
-
-            self.down_btn = DAlphaButton(self.down_frame, text='∨', command=self._scroll_down,
-                                    bg=self._arrow_bg, fg=self._arrow_fg,
-                                    font=('', 8), takefocus=False)
-            self.down_btn.pack(fill='both', expand=True)
-
-        else:
-            # 左箭头
-            self.up_frame = tk.Frame(self, width=self._arrowsize, height=self._width,
-                                     bg=self._arrow_bg, bd=0, highlightthickness=0)
-            self.up_frame.pack(side='left', fill='y')
-            self.up_frame.pack_propagate(False)
-
-            self.up_btn = DAlphaButton(self.up_frame, text='＜', command=self._scroll_up,
-                                  bg=self._arrow_bg, fg=self._arrow_fg,
-                                  font=('', 8), takefocus=False)
-            self.up_btn.pack(fill='both', expand=True)
-
-            # 右箭头
-            self.down_frame = tk.Frame(self, width=self._arrowsize, height=self._width,
-                                       bg=self._arrow_bg, bd=0, highlightthickness=0)
-            self.down_frame.pack(side='right', fill='y')
-            self.down_frame.pack_propagate(False)
-
-            self.down_btn = DAlphaButton(self.down_frame, text='＞', command=self._scroll_down,
-                                    bg=self._arrow_bg, fg=self._arrow_fg,
-                                    font=('', 8), takefocus=False)
-            self.down_btn.pack(fill='both', expand=True)
-
-        # ---------- 轨道 + 滑块（可延伸部分最小 20） ----------
-        self.trough = tk.Frame(self, bg=self._trough, bd=0, highlightthickness=0)
-        if self.orient == 'vertical':
-            self.trough.pack(side='top', fill='both', expand=True)
-            # 保证轨道区域至少 20 像素高
-            self.trough.configure(height=20)
-            self.trough.pack_propagate(False)   # 防止被压缩得太狠
-        else:
-            self.trough.pack(side='left', fill='both', expand=True)
-            self.trough.configure(width=20)
-            self.trough.pack_propagate(False)
-
-        self.canvas = tk.Canvas(self.trough, bg=self._trough,
-                                highlightthickness=0, bd=0)
-        self.canvas.pack(fill='both', expand=True)
-
-        self.thumb = self.canvas.create_rectangle(0, 0, 1, 1,
-                                                  fill=self._thumb_normal,
-                                                  outline='', tags='thumb',
-                                                  state='hidden')
-
-        # 事件绑定
-        self.canvas.bind('<Configure>', self._on_configure)
-        self.canvas.bind('<Button-1>', self._on_press)
-        self.canvas.bind('<B1-Motion>', self._on_drag)
-        self.canvas.bind('<ButtonRelease-1>', self._on_release)
-        self.canvas.bind('<Enter>', self._on_enter)
-        self.canvas.bind('<Leave>', self._on_leave)
-        self.canvas.bind('<MouseWheel>', self._on_mousewheel)
-        self.canvas.bind('<Button-4>', lambda e: self._scroll_units(-1))
-        self.canvas.bind('<Button-5>', lambda e: self._scroll_units(1))
-
-        self.canvas.tag_bind('thumb', '<Enter>', self._on_thumb_enter)
-        self.canvas.tag_bind('thumb', '<Leave>', self._on_thumb_leave)
-
-        self._update_thumb()
-
-    # ------------------------------------------------------------------
-    # 公共接口
-    # ------------------------------------------------------------------
-    def set(self, first, last):
-        try:
-            self._first = float(first)
-            self._last  = float(last)
-        except Exception:
-            self._first, self._last = 0.0, 1.0
-        self._update_thumb()
-
-    def get(self):
-        return self._first, self._last
-
-    def configure(self, cnf=None, **kw):
-        if isinstance(cnf, dict):
-            kw = {**cnf, **kw}
-            cnf = None
-
-        if 'command' in kw:
-            self.command = kw.pop('command')
-        if 'orient' in kw:
-            kw.pop('orient')
-        if 'bg' in kw:
-            self._bg = kw.pop('bg')
-            super().configure(bg=self._bg)
-        if 'troughcolor' in kw:
-            self._trough = kw.pop('troughcolor')
-            self.trough.configure(bg=self._trough)
-            self.canvas.configure(bg=self._trough)
-        if 'activebackground' in kw:
-            self._thumb_active = kw.pop('activebackground')
-        if 'width' in kw:
-            self._width = max(12, int(kw.pop('width')))
-            self._arrowsize = self._width
-            if self.orient == 'vertical':
-                super().configure(width=self._width)
-            else:
-                super().configure(height=self._width)
-
-        if kw:
-            return super().configure(**kw)
-        return None
-
-    config = configure
-
-    def __setitem__(self, key, value):
-        if key == 'command':
-            self.command = value
-        elif key == 'orient':
-            pass
-        elif key == 'bg':
-            self._bg = value
-            super().configure(bg=value)
-        elif key == 'troughcolor':
-            self._trough = value
-            self.trough.configure(bg=value)
-            self.canvas.configure(bg=value)
-        elif key == 'activebackground':
-            self._thumb_active = value
-        elif key == 'width':
-            self._width = max(12, int(value))
-            self._arrowsize = self._width
-            if self.orient == 'vertical':
-                super().configure(width=self._width)
-            else:
-                super().configure(height=self._width)
-        else:
-            super().__setitem__(key, value)
-
-    def __getitem__(self, key):
-        if key == 'command':
-            return self.command
-        if key == 'orient':
-            return self.orient
-        if key == 'bg':
-            return self._bg
-        if key == 'troughcolor':
-            return self._trough
-        if key == 'width':
-            return self._width
-        return super().__getitem__(key)
-
-    # ------------------------------------------------------------------
-    # 内部实现
-    # ------------------------------------------------------------------
-    def _on_configure(self, event=None):
-        self._update_thumb()
-
-    def _update_thumb(self):
-        if not self.winfo_exists():
-            return
-
-        # 内容不足以滚动时隐藏滑块
-        if self._last - self._first >= 0.999:
-            self.canvas.itemconfigure(self.thumb, state='hidden')
-            return
-
-        self.canvas.itemconfigure(self.thumb, state='normal')
-
-        w = self.canvas.winfo_width()
-        h = self.canvas.winfo_height()
-        if w <= 1 or h <= 1:
-            return
-
-        if self.orient == 'vertical':
-            total = h
-            size = max(20, int((self._last - self._first) * total))  # 滑块最小 20
-            pos  = int(self._first * total)
-            if pos + size > total:
-                pos = max(0, total - size)
-            self.canvas.coords(self.thumb, 1, pos, w - 1, pos + size)
-        else:
-            total = w
-            size = max(20, int((self._last - self._first) * total))
-            pos  = int(self._first * total)
-            if pos + size > total:
-                pos = max(0, total - size)
-            self.canvas.coords(self.thumb, pos, 1, pos + size, h - 1)
-
-    def _fraction(self, event):
-        if self.orient == 'vertical':
-            total = self.canvas.winfo_height()
-            if total <= 0:
-                return 0.0
-            return max(0.0, min(1.0, event.y / total))
-        else:
-            total = self.canvas.winfo_width()
-            if total <= 0:
-                return 0.0
-            return max(0.0, min(1.0, event.x / total))
-
-    def _on_press(self, event):
-        items = self.canvas.find_overlapping(event.x - 1, event.y - 1, event.x + 1, event.y + 1)
-        if self.thumb in items and self.canvas.itemcget(self.thumb, 'state') != 'hidden':
-            self._dragging = True
-            self._drag_start = event.y if self.orient == 'vertical' else event.x
-            self._drag_first = self._first
-            self.canvas.itemconfigure(self.thumb, fill=self._thumb_active)
-        else:
-            frac = self._fraction(event)
-            span = self._last - self._first
-            if span >= 0.999:
-                return
-            new_first = max(0.0, min(1.0 - span, frac - span / 2))
-            self._move_to(new_first)
-
-    def _on_drag(self, event):
-        if not self._dragging:
-            return
-        if self.orient == 'vertical':
-            total = max(1, self.canvas.winfo_height())
-            delta = (event.y - self._drag_start) / total
-        else:
-            total = max(1, self.canvas.winfo_width())
-            delta = (event.x - self._drag_start) / total
-
-        span = self._last - self._first
-        new_first = max(0.0, min(1.0 - span, self._drag_first + delta))
-        self._move_to(new_first)
-
-    def _on_release(self, event):
-        self._dragging = False
-        if self.canvas.itemcget(self.thumb, 'state') != 'hidden':
-            fill = self._thumb_hover if self._hover else self._thumb_normal
-            self.canvas.itemconfigure(self.thumb, fill=fill)
-
-    def _move_to(self, first):
-        span = self._last - self._first
-        self._first = first
-        self._last  = first + span
-        self._update_thumb()
-        if self.command:
-            self.command('moveto', self._first)
-
-    def _scroll_units(self, direction):
-        if self.command:
-            self.command('scroll', direction, 'units')
-
-    def _scroll_up(self):
-        self._scroll_units(-1)
-
-    def _scroll_down(self):
-        self._scroll_units(1)
-
-    def _on_mousewheel(self, event):
-        delta = -1 if event.delta > 0 else 1
-        self._scroll_units(delta)
-
-    def _on_enter(self, event):
-        self._hover = True
-        if not self._dragging and self.canvas.itemcget(self.thumb, 'state') != 'hidden':
-            self.canvas.itemconfigure(self.thumb, fill=self._thumb_hover)
-
-    def _on_leave(self, event):
-        self._hover = False
-        if not self._dragging and self.canvas.itemcget(self.thumb, 'state') != 'hidden':
-            self.canvas.itemconfigure(self.thumb, fill=self._thumb_normal)
-
-    def _on_thumb_enter(self, event):
-        self._hover = True
-        if not self._dragging:
-            self.canvas.itemconfigure(self.thumb, fill=self._thumb_hover)
-
-    def _on_thumb_leave(self, event):
-        if not self._dragging:
-            self._hover = False
-            self.canvas.itemconfigure(self.thumb, fill=self._thumb_normal)
 
 
 
@@ -6743,15 +6941,15 @@ class DScrollbar(tk.Frame):
 if __name__=='__main__':
     SetDPI()
 
-    
-    '''a=ToastNotification(text_blod='你好!',text_thin="自己写的简易通知弹窗,能自行运算大小,带有丝滑动画",
+    '''
+    a=ToastNotification(text_blod='你好!',text_thin="自己写的简易通知弹窗,能自行运算大小,带有丝滑动画",
                         title='应用程序',
-                        icon=f"icon.ico",
+                        icon="icon.ico",
                         image=f"{libresource}/correct.ico",
                         more_option_command=lambda:print("点击了更多选项按钮"),
                         stretch_command=None,
                         stretch_command_in_mainthread=0)
-    a.run_toast()''' 
+    a.run_toast()'''
 
     
     text='7f@K#9x!Q¥Ω≈ç√∞∑µ'
@@ -6766,8 +6964,8 @@ if __name__=='__main__':
 
 
     SetDPI()
-
-    def close_root(event=None):
+    
+    '''def close_root(event=None):
         root.destroy()
         sys.exit()
     root=tk.Tk()
@@ -6798,7 +6996,7 @@ if __name__=='__main__':
     b=DSpinbox(root,from_=0)
     b.place(x=20,y=100,width=180,height=30)
 
-    p=ImagePreview(root,image="D:/Desktop/无标题.png",bg='#00ff00',bd=10,relief='solid')
+    p=ImagePreview(root,image="D:/Desktop/好老师.jpg",bg='#00ff00',bd=10,relief='solid')
     p.place(x=20,y=160,width=500,height=400)
 
     y=DCheckbutton(root,text='fuckyou')
@@ -6815,8 +7013,105 @@ if __name__=='__main__':
     SetBorder(root,bd=0)
     ConvertPlaceToRelative(root)
 
+    root.mainloop()'''
+
+
+
+
+    # ====================== 演示（优化版） ======================
+    root = tk.Tk()
+    root.title('DProgressbar – 边缘无缝衔接')
+    W, H = 700, 400
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry(f'{W}x{H}+{(sw-W)//2}+{(sh-H-80)//2}')
+    root.config(bg=WINDOWBG, bd=0, highlightthickness=0)
+    root.focus()
+
+    # ---------- 进度条 ----------
+    tk.Label(root, text='Determinate（边缘无缝柔光）', bg=WINDOWBG, fg=TEXTFG,
+            ).place(x=20, y=8)
+
+    pb = DProgressbar(root, orient='horizontal', mode='determinate',
+                    maximum=100, value=45, barcolor=GREENLIGHT)
+    pb.place(x=20, y=32, width=520, height=30)
+
+
+
+
+
+    tk.Label(root, text='Indeterminate（无高光）', bg=WINDOWBG, fg=TEXTFG,
+            font=('', 10)).place(x=20, y=78)
+
+    pb3 = DProgressbar(root, orient='horizontal', mode='indeterminate',
+                    barcolor=GREENLIGHT)
+    pb3.place(x=20, y=102, width=520, height=30)
+    pb3.start(100)          # 不确定模式内部动画间隔（越小越快）
+
+
+
+
+    tk.Label(root, text='垂直', bg=WINDOWBG, fg=TEXTFG,).place(x=560, y=8)
+    pb2 = DProgressbar(root, orient='vertical', mode='determinate',
+                    maximum=100, value=60, barcolor=HIGHLIGHT)
+    pb2.place(x=580, y=32, width=30, height=200)
+
+    # ---------- 演示控制 ----------
+    bf = tk.Frame(root, bg=WINDOWBG)
+    bf.place(x=20, y=155)
+
+    # 可调参数（改这里就能控制速度）
+    DEMO_INTERVAL = 10          # 每次更新间隔（毫秒），越小越快
+    DEMO_STEP     = 0.2         # 每次增加的进度值，越大跳得越快
+
+    running = False
+    _demo_after_id = None
+
+    def add(d):
+        """手动加减进度"""
+        pb.value = pb.value + d
+        pb2.value = max(0, min(100, pb2.value + d * 0.7))
+
+    def _demo_tick():
+        """演示动画的一帧"""
+        global _demo_after_id
+        if not running:
+            return
+        pb.value = (pb.value + DEMO_STEP) % (pb.maximum + DEMO_STEP)
+        # 垂直条做一点联动（可选）
+        pb2.value = 20 + 60 * abs((pb.value / 50) - 1)
+        _demo_after_id = root.after(DEMO_INTERVAL, _demo_tick)
+
+    def start_demo():
+        global running, _demo_after_id
+        if running:
+            return
+        running = True
+        _demo_tick()
+
+    def stop_demo():
+        global running, _demo_after_id
+        running = False
+        if _demo_after_id:
+            root.after_cancel(_demo_after_id)
+            _demo_after_id = None
+
+    def reset():
+        stop_demo()
+        pb.value = 0
+        pb2.value = 0
+
+
+
+    DButton(bf, text=' +5 ', command=lambda: add(5)).pack(side='left', padx=3)
+    DButton(bf, text=' -5 ', command=lambda: add(-5)).pack(side='left', padx=3)
+    DButton(bf, text='开始演示', command=start_demo).pack(side='left', padx=3)
+    DButton(bf, text='停止演示', command=stop_demo).pack(side='left', padx=3)
+    DButton(bf, text='重置', command=reset).pack(side='left', padx=3)
+
+    tk.Label(root, text='调速方法见下方说明',
+            bg=WINDOWBG, fg=SECONDARYTEXTFG,).place(x=20, y=210)
+
     root.mainloop()
-    
     '''
     def on_exit():
         print("退出应用程序...")

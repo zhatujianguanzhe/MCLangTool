@@ -16,46 +16,6 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE."""
 
 
-def SetExpandedTreeviewRowColor(widget, color1=WIDGETBG, color2=TEXTBG, fore_color=TEXTFG):
-    """
-    为Treeview设置交替行颜色（仅针对可见/已展开的行）
-    :param widget: Treeview实例
-    :param color1: 奇数行背景色 (默认WIDGETBG)
-    :param color2: 偶数行背景色 (默认TEXTBG)
-    """
-    # 1. 定义两个标签并配置颜色
-    widget.tag_configure('odd_row', background=color1, foreground=fore_color)
-    widget.tag_configure('even_row', background=color2, foreground=fore_color)
-    
-    # 2. 递归获取所有可见（已展开）的节点
-    def get_visible_items(parent=''):
-        items = []
-        for child in widget.get_children(parent):
-            items.append(child)
-            # 只有当子节点展开时才递归获取
-            if widget.item(child, 'open'):
-                items.extend(get_visible_items(child))
-        return items
-    
-    # 3. 获取所有可见节点
-    visible_items = get_visible_items()
-    
-    # 4. 遍历所有可见节点，按视觉顺序分配标签
-    for index, item in enumerate(visible_items):
-        # index 为偶数 -> even_row, index 为奇数 -> odd_row
-        tag = 'even_row' if index % 2 == 0 else 'odd_row'
-        
-        # 获取该节点原有的 tags (避免覆盖其他状态标签)
-        current_tags = widget.item(item, 'tags')
-        if isinstance(current_tags, str):
-            current_tags = (current_tags,)
-            
-        # 移除旧的颜色标签 (防止重复调用时标签叠加)
-        new_tags = [t for t in current_tags if t not in ('odd_row', 'even_row')]
-        new_tags.append(tag)
-        
-        # 重新设置 tags
-        widget.item(item, tags=tuple(new_tags))
 
 
 class UndoManager:
@@ -396,7 +356,7 @@ class MCLangTools:
         self.text_lang = tk.Text(self.root,
                           bg=TEXTBG, fg=TEXTFG, selectbackground=HIGHLIGHT, selectforeground=TEXTFG,
                           insertbackground=HIGHLIGHT, insertontime=500, insertofftime=500, insertwidth=2,
-                          font='consolas 12', bd=1, relief='solid', wrap='none', undo=True, state='disabled',)
+                          font='consolas 12', bd=0, relief='solid', wrap='none', undo=True, state='disabled',)
         SetBorder(self.text_lang)
         self.text_lang.place(x=860, y=120, width=600, height=740)
 
